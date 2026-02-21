@@ -1,5 +1,5 @@
 /**
- * Lyra TTS — Content Script
+ * Lyra TTS - Content Script
  *
  * Injected into every page. Responsible for:
  *  - Showing a floating playback-status bar at the bottom of the page

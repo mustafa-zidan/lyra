@@ -1,5 +1,5 @@
 /**
- * Lyra TTS — Background Service Worker
+ * Lyra TTS - Background Service Worker
  *
  * Responsibilities:
  *  - Register the context-menu item
@@ -38,15 +38,15 @@ async function getSettings() {
 // Context menu
 // ---------------------------------------------------------------------------
 
-api.runtime.onInstalled.addListener(() => {
+api.runtime.onInstalled.addEventListener(() => {
   api.contextMenus.create({
     id: CONTEXT_MENU_ID,
-    title: 'Read selection aloud — Lyra',
+    title: 'Read selection aloud - Lyra',
     contexts: ['selection'],
   });
 });
 
-api.contextMenus.onClicked.addListener(async (info, tab) => {
+api.contextMenus.onClicked.addEventListener(async (info, tab) => {
   if (info.menuItemId !== CONTEXT_MENU_ID) return;
   const text = info.selectionText?.trim();
   if (!text || !tab?.id) return;
@@ -59,11 +59,11 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
 // Message handling (from popup / content script)
 // ---------------------------------------------------------------------------
 
-api.runtime.onMessage.addListener((message, sender, sendResponse) => {
+api.runtime.onMessage.addEventListener((message, sender, sendResponse) => {
   handleMessage(message, sender).then(sendResponse).catch((err) => {
     sendResponse({ ok: false, error: err.message });
   });
-  return true; // keep channel open for async response
+  return true; // keep the channel open for async response
 });
 
 async function handleMessage(message, sender) {
@@ -105,7 +105,7 @@ async function handleMessage(message, sender) {
 // ---------------------------------------------------------------------------
 
 /**
- * Send text-to-speech request to the server, then play the returned WAV in
+ * Send a text-to-speech request to the server, then play the returned WAV in
  * the target tab via an injected script.
  */
 async function speakInTab(tabId, text, voice, serverUrl) {
