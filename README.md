@@ -1,4 +1,4 @@
-# Eurydice Web
+# Lyra
 
 HTTP API server and browser extension that expose the [eurydice-tts](https://github.com/mustafa-zidan/eurydice) text-to-speech library to any web page.
 
@@ -11,7 +11,7 @@ Browser Extension (Chrome / Firefox)
         │
         │  HTTP  POST /tts/generate
         ▼
-Eurydice Web Server  (FastAPI)
+Lyra Server  (FastAPI)
         │
         │  Python API
         ▼
@@ -48,7 +48,7 @@ The server delegates inference to one of the following backends (auto-detected i
 
 ```bash
 git clone <this-repo>
-cd eurydice-web
+cd lyra
 uv sync
 ```
 
@@ -65,7 +65,7 @@ uv run uvicorn server.main:app --host 127.0.0.1 --port 8000
 Or use the project CLI shortcut:
 
 ```bash
-uv run eurydice-web
+uv run lyra
 ```
 
 The API is now available at `http://127.0.0.1:8000`.
@@ -167,7 +167,7 @@ uv run pytest -v
 ## Project Structure
 
 ```
-eurydice-web/
+lyra/
 ├── server/           # FastAPI web server
 │   ├── main.py       # App factory + lifespan
 │   ├── api/          # Routes and Pydantic models

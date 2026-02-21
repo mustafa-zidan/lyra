@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Eurydice — Text to Speech",
+  "name": "Lyra — Text to Speech",
   "version": "0.1.0",
-  "description": "Read any selected text or full web page aloud using the Eurydice TTS server.",
+  "description": "Read any selected text or full web page aloud using the Lyra TTS server.",
 
   "permissions": [
     "contextMenus",
@@ -35,7 +35,7 @@
       "48": "icons/icon-48.png",
       "128": "icons/icon-128.png"
     },
-    "default_title": "Eurydice TTS"
+    "default_title": "Lyra TTS"
   },
 
   "options_ui": {
@@ -51,7 +51,7 @@
 
   "browser_specific_settings": {
     "gecko": {
-      "id": "eurydice-tts@extension",
+      "id": "lyra-tts@extension",
       "strict_min_version": "109.0"
     }
   }

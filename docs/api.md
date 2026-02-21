@@ -1,4 +1,4 @@
-# Eurydice Web — API Reference
+# Lyra — API Reference
 
 Base URL: `http://127.0.0.1:8000` (default)
 
@@ -14,7 +14,7 @@ Returns API metadata.
 
 ```json
 {
-  "name": "Eurydice Web",
+  "name": "Lyra",
   "version": "0.1.0",
   "description": "TTS API powered by eurydice-tts",
   "docs": "/docs"

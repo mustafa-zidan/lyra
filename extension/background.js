@@ -1,5 +1,5 @@
 /**
- * Eurydice TTS — Background Service Worker
+ * Lyra TTS — Background Service Worker
  *
  * Responsibilities:
  *  - Register the context-menu item
@@ -19,7 +19,7 @@ const api = typeof browser !== 'undefined' ? browser : chrome;
 
 const DEFAULT_SERVER_URL = 'http://127.0.0.1:8000';
 const DEFAULT_VOICE = 'leo';
-const CONTEXT_MENU_ID = 'eurydice-read-selection';
+const CONTEXT_MENU_ID = 'lyra-read-selection';
 
 // ---------------------------------------------------------------------------
 // Storage helpers
@@ -41,7 +41,7 @@ async function getSettings() {
 api.runtime.onInstalled.addListener(() => {
   api.contextMenus.create({
     id: CONTEXT_MENU_ID,
-    title: 'Read selection aloud — Eurydice',
+    title: 'Read selection aloud — Lyra',
     contexts: ['selection'],
   });
 });

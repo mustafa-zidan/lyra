@@ -1,5 +1,5 @@
 /**
- * Eurydice TTS — Options Page Script
+ * Lyra TTS — Options Page Script
  */
 
 'use strict';

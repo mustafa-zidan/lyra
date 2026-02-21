@@ -1,7 +1,7 @@
 ### Eurydice web - AI Agent Guidelines
 
 #### Overview
-This document defines the workflow for AI coding agents working on eurydice-web.
+This document defines the workflow for AI coding agents working on lyra.
 
 #### Tool Stack
 - **sequential-thinking**: Planning and analysis

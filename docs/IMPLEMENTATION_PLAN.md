@@ -1,4 +1,4 @@
-# Eurydice Web — Implementation Plan
+# Lyra — Implementation Plan
 
 ## Overview
 
@@ -32,7 +32,7 @@
 └────────────────────┼────────────────────────────┘
                      │
      ┌───────────────▼──────────────────────┐
-     │         Eurydice Web Server          │
+     │         Lyra Server          │
      │         FastAPI + uvicorn            │
      │                                      │
      │  GET  /                              │
@@ -55,7 +55,7 @@
 ## Project Structure
 
 ```
-eurydice-web/
+lyra/
 ├── pyproject.toml              # uv project, Python 3.12+
 ├── .python-version             # "3.12"
 ├── .gitignore
@@ -118,7 +118,7 @@ Returns API metadata.
 **Response 200:**
 ```json
 {
-  "name": "Eurydice Web",
+  "name": "Lyra",
   "version": "0.1.0",
   "description": "TTS API powered by eurydice-tts",
   "docs": "/docs"
@@ -302,7 +302,7 @@ Long text is split into sentence-length chunks (~500 characters, split at senten
 
 ```toml
 [project]
-name = "eurydice-web"
+name = "lyra"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [

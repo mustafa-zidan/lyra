@@ -23,10 +23,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     tts_service = TTSService(app.state.settings)
     app.state.tts = tts_service
     await tts_service.startup()
-    logger.info("Eurydice Web server started")
+    logger.info("Lyra server started")
     yield
     await tts_service.shutdown()
-    logger.info("Eurydice Web server shut down")
+    logger.info("Lyra server shut down")
 
 
 def create_app(cfg: Settings | None = None) -> FastAPI:
@@ -34,11 +34,11 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
     cfg = cfg or settings
 
     app = FastAPI(
-        title="Eurydice Web",
+        title="Lyra",
         version="0.1.0",
         description=(
             "HTTP API server that exposes the eurydice-tts library as a REST service. "
-            "Designed for use with the Eurydice browser extension."
+            "Designed for use with the Lyra browser extension."
         ),
         license_info={"name": "MIT"},
         lifespan=lifespan,
@@ -66,7 +66,7 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
     @app.get("/", response_model=RootResponse, tags=["Status"], summary="API info")
     async def root() -> RootResponse:
         return RootResponse(
-            name="Eurydice Web",
+            name="Lyra",
             version="0.1.0",
             description="TTS API powered by eurydice-tts",
             docs="/docs",
@@ -79,7 +79,7 @@ app = create_app()
 
 
 def run() -> None:
-    """Entry point for ``eurydice-web`` CLI script."""
+    """Entry point for ``lyra`` CLI script."""
     uvicorn.run(
         "server.main:app",
         host=settings.host,

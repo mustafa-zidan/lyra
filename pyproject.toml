@@ -1,7 +1,7 @@
 [project]
-name = "eurydice-web"
+name = "lyra"
 version = "0.1.0"
-description = "HTTP API server and browser extension for eurydice-tts text-to-speech"
+description = "TTS web server and browser extension powered by eurydice-tts"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
@@ -25,7 +25,7 @@ dev = [
 ]
 
 [project.scripts]
-eurydice-web = "server.main:run"
+lyra = "server.main:run"
 
 [build-system]
 requires = ["hatchling"]

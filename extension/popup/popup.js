@@ -1,5 +1,5 @@
 /**
- * Eurydice TTS — Popup Script
+ * Lyra TTS — Popup Script
  */
 
 'use strict';
