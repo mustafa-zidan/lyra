@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Eurydice TTS</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="header">
+      <img src="../icons/icon-48.png" alt="Eurydice" class="logo" />
+      <div class="header-text">
+        <h1>Eurydice</h1>
+        <span id="status-badge" class="badge badge--checking">Checking…</span>
+      </div>
+    </header>
+
+    <section class="controls">
+      <label for="voice-select" class="label">Voice</label>
+      <select id="voice-select" class="select">
+        <option value="">Loading…</option>
+      </select>
+    </section>
+
+    <section class="actions">
+      <button id="btn-read-selection" class="btn btn--primary" disabled>
+        🎙 Read selection
+      </button>
+      <button id="btn-read-page" class="btn btn--secondary" disabled>
+        📄 Read page
+      </button>
+      <button id="btn-stop" class="btn btn--danger" style="display:none">
+        ⏹ Stop
+      </button>
+    </section>
+
+    <footer class="footer">
+      <a id="options-link" href="#" class="link">Settings</a>
+    </footer>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
