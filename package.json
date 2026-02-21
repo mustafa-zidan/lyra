@@ -1,0 +1,25 @@
+{
+  "name": "lyra-extension",
+  "version": "0.1.0",
+  "description": "Lyra TTS browser extension",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.0.0",
+  "scripts": {
+    "lint:js": "eslint extension/",
+    "lint:js:fix": "eslint extension/ --fix",
+    "format:js": "prettier --write \"extension/**/*.{js,json,css,html}\"",
+    "format:js:check": "prettier --check \"extension/**/*.{js,json,css,html}\"",
+    "build:ext": "web-ext build --source-dir extension/ --artifacts-dir dist/ --overwrite-dest",
+    "test:ext": "playwright test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.20.0",
+    "@playwright/test": "^1.50.0",
+    "eslint": "^9.20.0",
+    "globals": "^16.0.0",
+    "prettier": "^3.5.0",
+    "web-ext": "^8.4.0"
+  }
+}

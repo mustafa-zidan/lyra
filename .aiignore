@@ -57,3 +57,6 @@ site/
 .cache/
 *.bak
 *.orig
+
+# Node
+node_modules

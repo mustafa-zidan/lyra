@@ -32,6 +32,12 @@ htmlcov/
 *.swp
 *.swo
 
+# Node
+node_modules/
+# (pnpm-lock.yaml is intentionally committed for reproducibility)
+
 # OS
 .DS_Store
 Thumbs.db
+
+test-results
