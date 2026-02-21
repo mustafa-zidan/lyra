@@ -2,12 +2,21 @@
 
 ## In Progress
 
+- [ ] AGPL-3.0 license + SPDX headers across all source files
+- [ ] Fix background.js addEventListener bug + add chunk-highlight messaging
+- [ ] Implement page highlighting in content.js (CSS Highlight API + fallback)
+- [ ] JS tooling: package.json, eslint.config.js, .prettierrc.json
+- [ ] Pre-commit hooks: .pre-commit-config.yaml
+- [ ] Playwright extension tests: config, fixtures, helpers, test files
+- [ ] GitHub Actions: test.yml + release.yml
 
 ## To Do
 
 
 ## Backlog
-
+- [ ] switch to extensions typescript if possible
+- [ ] restyle the extension 
+- [ ] generate a nicer icon
 
 ## Done
 
