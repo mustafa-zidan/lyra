@@ -186,7 +186,7 @@ async function fetchHealth(serverUrl) {
 /**
  * Split text at sentence boundaries into chunks of at most `maxLen` characters.
  */
-export function chunkText(text, maxLen = 500) {
+function chunkText(text, maxLen = 500) {
   const sentences = text.match(/[^.!?]+[.!?]*/g) ?? [text];
   const chunks = [];
   let current = '';

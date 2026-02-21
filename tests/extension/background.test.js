@@ -4,7 +4,7 @@
  * These run in a plain Node context (no browser required).
  */
 import { test, expect } from '@playwright/test';
-import { chunkText } from '../../extension/background.js';
+import { chunkText } from '../../extension/chunk-text.js';
 
 test.describe('chunkText()', () => {
   test('single short sentence stays as one chunk', () => {

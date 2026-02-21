@@ -25,20 +25,9 @@ export default [
     },
   },
   {
-    // background.js exports chunkText for Node testing — ESM syntax required.
-    // browser/chrome globals are already declared above; no-undef is turned off
-    // here to prevent any ESLint auto-fix from injecting spurious imports.
-    files: ['extension/background.js'],
-    languageOptions: {
-      sourceType: 'module',
-      globals: {
-        browser: 'readonly',
-        chrome: 'readonly',
-      },
-    },
-    rules: {
-      'no-undef': 'off',
-    },
+    // chunk-text.js is an ES module (exports chunkText for Node unit tests).
+    files: ['extension/chunk-text.js'],
+    languageOptions: { sourceType: 'module' },
   },
   {
     ignores: ['dist/', 'node_modules/', '.venv/'],
