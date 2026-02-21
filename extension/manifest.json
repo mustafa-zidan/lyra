@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Lyra — Text to Speech",
+  "name": "Lyra: Text to Speech",
   "version": "0.1.0",
   "description": "Read any selected text or full web page aloud using the Lyra TTS server.",
 

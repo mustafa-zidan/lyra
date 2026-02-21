@@ -48,7 +48,7 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
     # Store settings on app state so route handlers can access them
     app.state.settings = cfg
 
-    # CORS — required for browser extension fetch() calls
+    # CORS: required for browser extension fetch() calls
     cors_origins = cfg.cors_origins_list()
     app.add_middleware(
         CORSMiddleware,

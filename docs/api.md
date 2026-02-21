@@ -1,4 +1,4 @@
-# Lyra — API Reference
+# Lyra: API Reference
 
 Base URL: `http://127.0.0.1:8000` (default)
 
@@ -27,7 +27,7 @@ Returns API metadata.
 
 Returns the current server and TTS backend status.
 
-### Response 200 — OK
+### Response 200:  OK
 
 ```json
 {
@@ -37,7 +37,7 @@ Returns the current server and TTS backend status.
 }
 ```
 
-### Response 503 — TTS backend unavailable
+### Response 503: TTS backend unavailable
 
 ```json
 {
@@ -86,11 +86,11 @@ Synthesises speech from text and returns a WAV audio file.
 }
 ```
 
-| Field    | Type   | Required | Default                    | Description                            |
-|----------|--------|----------|----------------------------|----------------------------------------|
-| `text`   | string | Yes      | —                          | Input text (1 – 5 000 characters)      |
-| `voice`  | string | No       | Server default (e.g. `leo`) | One of the 8 voice IDs                |
-| `format` | string | No       | `"wav"`                    | Audio format — only `"wav"` supported  |
+| Field    | Type   | Required | Default                     | Description                          |
+|----------|--------|----------|-----------------------------|--------------------------------------|
+| `text`   | string | Yes      | -                           | Input text (1 – 5 000 characters)    |
+| `voice`  | string | No       | Server default (e.g. `leo`) | One of the 8 voice IDs               |
+| `format` | string | No       | `"wav"`                     | Audio format, only `"wav"` supported |
 
 ### Response 200
 
@@ -103,7 +103,7 @@ Synthesises speech from text and returns a WAV audio file.
 | `X-Cached`          | `"true"` if served from cache             |
 | `X-Voice`           | Voice ID used for this response           |
 
-### Response 400 — Invalid voice or format
+### Response 400: Invalid voice or format
 
 ```json
 {
@@ -111,7 +111,7 @@ Synthesises speech from text and returns a WAV audio file.
 }
 ```
 
-### Response 422 — Validation error
+### Response 422: Validation error
 
 ```json
 {
@@ -126,7 +126,7 @@ Synthesises speech from text and returns a WAV audio file.
 }
 ```
 
-### Response 503 — TTS backend unavailable
+### Response 503: TTS backend unavailable
 
 ```json
 {

@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     tts_server_url: str = "http://localhost:1234/v1"
     default_voice: str = "leo"
 
-    # CORS — comma-separated list of allowed origins, or "*" for all
+    # CORS: comma-separated list of allowed origins, or "*" for all
     cors_origins: str = "*"
 
     # Logging

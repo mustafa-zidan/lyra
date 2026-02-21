@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 /**
- * Integration tests for content.js — highlighting and status bar behaviour.
+ * Integration tests for content.js, highlighting and status bar behaviour.
  *
  * These tests load the real test-page.html through a file:// URL and inject
  * the content script to verify DOM interactions.
  */
 import { test, expect } from './helpers/extension-context.js';
 
-test.describe('Content script — status bar', () => {
+test.describe('Content script: status bar', () => {
   test('status bar is not visible on page load', async ({ context, mockServerUrl }) => {
     const page = await context.newPage();
     await page.goto(`${mockServerUrl}/fixtures/test-page.html`);
@@ -38,11 +38,11 @@ test.describe('Content script — status bar', () => {
         }),
       );
       // Directly call the content script listener by dispatching a chrome runtime message
-      // The content script listens via chrome.runtime.onMessage — we invoke it indirectly
+      // The content script listens via chrome.runtime.onMessage, we invoke it indirectly
       // by using the extension's internal message channel.
     });
 
-    // The content script injects its status bar lazily — verify it exists in DOM
+    // The content script injects its status bar lazily, verify it exists in DOM
     // after the page has fully loaded the content script
     await page.waitForTimeout(300);
     const injected = await page.evaluate(() => !!document.getElementById('__lyra-hl-style'));

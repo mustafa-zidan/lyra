@@ -1,4 +1,4 @@
-# Lyra — Implementation Plan
+# Lyra: Implementation Plan
 
 ## Overview
 
@@ -185,7 +185,7 @@ Generates audio from text. Returns WAV audio binary.
 
 | Field    | Type   | Required | Default | Notes                          |
 |----------|--------|----------|---------|--------------------------------|
-| `text`   | string | Yes      | —       | 1–5000 characters              |
+| `text`   | string | Yes      | -       | 1–5000 characters              |
 | `voice`  | string | No       | "leo"   | One of the 8 supported voices  |
 | `format` | string | No       | "wav"   | Only "wav" supported currently |
 
@@ -257,7 +257,7 @@ Firefox requires `"browser_specific_settings"` in manifest for AMO submission.
 ### Extension Features
 
 **Context Menu:**
-- Right-click → "Read selection aloud with Eurydice"
+- Right-click → "Read selection aloud with Lyra"
 - Appears only when text is selected
 
 **Popup (toolbar icon):**
@@ -325,7 +325,7 @@ dev = [
 
 ## Implementation Tasks (ordered)
 
-### Phase 1 — Server
+### Phase 1: Server
 
 | # | Task                            | File(s)                             |
 |---|---------------------------------|-------------------------------------|
@@ -339,7 +339,7 @@ dev = [
 | 8 | App factory + CORS + lifespan   | `server/main.py`                    |
 | 9 | Tests                           | `tests/`                            |
 
-### Phase 2 — Browser Extension
+### Phase 2: Browser Extension
 
 | #  | Task                        | File(s)                             |
 |----|-----------------------------|-------------------------------------|
@@ -349,7 +349,7 @@ dev = [
 | 13 | Popup                       | `extension/popup/`                  |
 | 14 | Options page                | `extension/options/`                |
 
-### Phase 3 — Docs & Polish
+### Phase 3: Docs & Polish
 
 | #  | Task                                    | File(s)       |
 |----|-----------------------------------------|---------------|

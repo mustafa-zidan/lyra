@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""TTS service — manages the Eurydice client lifecycle."""
+"""TTS service: manages the Eurydice client lifecycle."""
 
 import logging
 
@@ -41,7 +41,7 @@ class TTSService:
                 logger.info("TTS provider connected: %s", self._settings.tts_provider)
             else:
                 logger.warning(
-                    "TTS provider not available — server will return 503 for /tts/generate"
+                    "TTS provider not available: server will return 503 for /tts/generate"
                 )
         except EurydiceError as exc:
             logger.warning("TTS connection failed: %s", exc)

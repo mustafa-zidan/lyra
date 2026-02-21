@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 /**
- * Playwright global setup — starts the WAV stub server used by extension tests.
- * Picks a random available port and writes it to a temp file so tests can read it.
+ * Playwright global setup, starts the WAV stub server used by extension tests.
+ * Picks a random available port and writes it to a temp file, so tests can read it.
  */
 import http from 'http';
 import fs from 'fs';

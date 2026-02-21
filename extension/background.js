@@ -10,7 +10,7 @@
  */
 
 // Cross-browser API shim (Firefox uses `browser`, Chrome uses `chrome`).
-// Both are declared as globals in eslint.config.js — no import needed.
+// Both are declared as globals in eslint.config.js no import needed.
 const api =
   typeof browser !== 'undefined' ? browser : typeof chrome !== 'undefined' ? chrome : null;
 
@@ -40,7 +40,7 @@ if (api) {
   api.runtime.onInstalled.addListener(() => {
     api.contextMenus.create({
       id: CONTEXT_MENU_ID,
-      title: 'Read selection aloud — Lyra',
+      title: 'Read selection aloud with Lyra',
       contexts: ['selection'],
     });
   });
