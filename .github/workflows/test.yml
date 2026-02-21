@@ -1,0 +1,71 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Python server ──────────────────────────────────────────────────────────
+  server:
+    name: Server (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Lint (ruff)
+        run: uv run ruff check .
+
+      - name: Format check (ruff)
+        run: uv run ruff format --check .
+
+      - name: Tests
+        run: uv run pytest -v --tb=short
+
+  # ── Browser extension ──────────────────────────────────────────────────────
+  extension:
+    name: Extension (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ["22"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: true
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Install Xvfb (for headless extension testing)
+        run: sudo apt-get install -y xvfb
+
+      - name: Lint (ESLint)
+        run: pnpm run lint:js
+
+      - name: Format check (Prettier)
+        run: pnpm run format:js:check
+
+      - name: Extension tests
+        # Chrome extensions require a real display; xvfb-run provides one on Linux
+        run: xvfb-run --auto-servernum pnpm run test:ext

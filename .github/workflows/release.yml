@@ -1,0 +1,115 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]*"
+
+jobs:
+  # ── Run full test suite before releasing ──────────────────────────────────
+  test-server:
+    name: Server tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      - run: uv sync --extra dev
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest -v --tb=short
+
+  test-extension:
+    name: Extension tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: true
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm run lint:js
+      - run: pnpm run format:js:check
+      - run: pnpm run test:ext
+
+  # ── Build extension package ───────────────────────────────────────────────
+  build-extension:
+    name: Build extension
+    needs: [test-server, test-extension]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: true
+
+      - name: Build extension ZIP
+        run: pnpm run build:ext
+
+      - name: Upload extension artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lyra-extension-${{ github.ref_name }}
+          path: dist/*.zip
+          if-no-files-found: error
+
+  # ── Build server distribution ─────────────────────────────────────────────
+  build-server:
+    name: Build server wheel
+    needs: [test-server, test-extension]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Build wheel
+        run: uv build --wheel
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lyra-server-${{ github.ref_name }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  # ── Create GitHub Release ─────────────────────────────────────────────────
+  github-release:
+    name: GitHub Release
+    needs: [build-extension, build-server]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download extension artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: lyra-extension-${{ github.ref_name }}
+          path: release/
+
+      - name: Download server artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: lyra-server-${{ github.ref_name }}
+          path: release/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
