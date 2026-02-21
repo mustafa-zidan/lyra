@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """TTS service — manages the Eurydice client lifecycle."""
 
 import logging

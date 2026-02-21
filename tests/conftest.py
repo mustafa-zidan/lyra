@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Pytest fixtures shared across the test suite."""
 
 from unittest.mock import AsyncMock, MagicMock, patch

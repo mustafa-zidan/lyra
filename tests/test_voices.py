@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Tests for GET /voices."""
 
 from fastapi.testclient import TestClient

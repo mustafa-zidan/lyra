@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Pydantic request and response models for the API."""
 
 from pydantic import BaseModel, Field

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Voices listing endpoint."""
 
 from eurydice import Eurydice

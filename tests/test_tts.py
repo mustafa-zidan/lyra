@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Tests for POST /tts/generate."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
