@@ -4,21 +4,13 @@
   "version": "0.1.0",
   "description": "Read any selected text or full web page aloud using the Lyra TTS server.",
 
-  "permissions": [
-    "contextMenus",
-    "storage",
-    "activeTab",
-    "scripting"
-  ],
+  "permissions": ["contextMenus", "storage", "activeTab", "scripting"],
 
-  "host_permissions": [
-    "http://127.0.0.1:8000/*",
-    "http://localhost:8000/*"
-  ],
+  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"],
 
   "background": {
     "service_worker": "background.js",
-    "scripts": ["background.js"]
+    "type": "module"
   },
 
   "content_scripts": [

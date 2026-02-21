@@ -1,17 +1,18 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 /**
  * Lyra TTS - Background Service Worker
  *
  * Responsibilities:
  *  - Register the context-menu item
  *  - Fetch audio from the Eurydice server
- *  - Play audio in a background AudioContext
- *  - Broadcast playback state to content scripts
+ *  - Play audio injected into the active tab
+ *  - Broadcast playback state and chunk highlights to content scripts
  */
 
-'use strict';
-
-// Cross-browser API shim (Firefox uses `browser`, Chrome uses `chrome`)
-const api = typeof browser !== 'undefined' ? browser : chrome;
+// Cross-browser API shim (Firefox uses `browser`, Chrome uses `chrome`).
+// Both are declared as globals in eslint.config.js — no import needed.
+const api =
+  typeof browser !== 'undefined' ? browser : typeof chrome !== 'undefined' ? chrome : null;
 
 // ---------------------------------------------------------------------------
 // Constants / defaults
@@ -27,10 +28,7 @@ const CONTEXT_MENU_ID = 'lyra-read-selection';
 
 async function getSettings() {
   return new Promise((resolve) => {
-    api.storage.local.get(
-      { serverUrl: DEFAULT_SERVER_URL, defaultVoice: DEFAULT_VOICE },
-      resolve,
-    );
+    api.storage.local.get({ serverUrl: DEFAULT_SERVER_URL, defaultVoice: DEFAULT_VOICE }, resolve);
   });
 }
 
@@ -38,33 +36,37 @@ async function getSettings() {
 // Context menu
 // ---------------------------------------------------------------------------
 
-api.runtime.onInstalled.addEventListener(() => {
-  api.contextMenus.create({
-    id: CONTEXT_MENU_ID,
-    title: 'Read selection aloud - Lyra',
-    contexts: ['selection'],
+if (api) {
+  api.runtime.onInstalled.addListener(() => {
+    api.contextMenus.create({
+      id: CONTEXT_MENU_ID,
+      title: 'Read selection aloud — Lyra',
+      contexts: ['selection'],
+    });
   });
-});
 
-api.contextMenus.onClicked.addEventListener(async (info, tab) => {
-  if (info.menuItemId !== CONTEXT_MENU_ID) return;
-  const text = info.selectionText?.trim();
-  if (!text || !tab?.id) return;
+  api.contextMenus.onClicked.addListener(async (info, tab) => {
+    if (info.menuItemId !== CONTEXT_MENU_ID) return;
+    const text = info.selectionText?.trim();
+    if (!text || !tab?.id) return;
 
-  const { serverUrl, defaultVoice } = await getSettings();
-  await speakInTab(tab.id, text, defaultVoice, serverUrl);
-});
-
-// ---------------------------------------------------------------------------
-// Message handling (from popup / content script)
-// ---------------------------------------------------------------------------
-
-api.runtime.onMessage.addEventListener((message, sender, sendResponse) => {
-  handleMessage(message, sender).then(sendResponse).catch((err) => {
-    sendResponse({ ok: false, error: err.message });
+    const { serverUrl, defaultVoice } = await getSettings();
+    await speakInTab(tab.id, text, defaultVoice, serverUrl);
   });
-  return true; // keep the channel open for async response
-});
+
+  // ---------------------------------------------------------------------------
+  // Message handling (from popup / content script)
+  // ---------------------------------------------------------------------------
+
+  api.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    handleMessage(message, sender)
+      .then(sendResponse)
+      .catch((err) => {
+        sendResponse({ ok: false, error: err.message });
+      });
+    return true; // keep channel open for async response
+  });
+}
 
 async function handleMessage(message, sender) {
   const { action } = message;
@@ -74,7 +76,6 @@ async function handleMessage(message, sender) {
     const tabId = sender.tab?.id ?? (await getActiveTabId());
     if (!tabId) return { ok: false, error: 'No active tab' };
 
-    // Run async without awaiting so the response comes back immediately
     speakInTab(tabId, text, voice, serverUrl).catch(console.error);
     return { ok: true };
   }
@@ -105,26 +106,29 @@ async function handleMessage(message, sender) {
 // ---------------------------------------------------------------------------
 
 /**
- * Send a text-to-speech request to the server, then play the returned WAV in
- * the target tab via an injected script.
+ * Generate speech for each chunk of text, highlighting and playing sequentially.
  */
 async function speakInTab(tabId, text, voice, serverUrl) {
   notifyTab(tabId, { action: 'playback-started', text });
 
   try {
-    // Split long text into sentence-sized chunks for lower latency
     const chunks = chunkText(text);
     for (const chunk of chunks) {
+      // Signal content script to highlight this chunk before fetching audio
+      notifyTab(tabId, { action: 'chunk-highlight', text: chunk });
+
       const audioBase64 = await fetchTTS(chunk, voice, serverUrl);
-      // Inject the audio player script into the tab
       await api.scripting.executeScript({
         target: { tabId },
         func: playAudioInPage,
         args: [audioBase64],
       });
     }
+    // Clear highlight after all chunks finish
+    notifyTab(tabId, { action: 'chunk-highlight', text: null });
     notifyTab(tabId, { action: 'playback-finished' });
   } catch (err) {
+    notifyTab(tabId, { action: 'chunk-highlight', text: null });
     notifyTab(tabId, { action: 'playback-error', error: err.message });
   }
 }
@@ -180,9 +184,9 @@ async function fetchHealth(serverUrl) {
 // ---------------------------------------------------------------------------
 
 /**
- * Split text at sentence boundaries into chunks of ~500 characters.
+ * Split text at sentence boundaries into chunks of at most `maxLen` characters.
  */
-function chunkText(text, maxLen = 500) {
+export function chunkText(text, maxLen = 500) {
   const sentences = text.match(/[^.!?]+[.!?]*/g) ?? [text];
   const chunks = [];
   let current = '';
@@ -222,7 +226,7 @@ async function getActiveTabId() {
 
 /**
  * Plays a base64-encoded WAV in the page.
- * This function is serialised and injected via scripting.executeScript.
+ * Serialised and injected via scripting.executeScript — must be self-contained.
  */
 function playAudioInPage(audioDataUrl) {
   return new Promise((resolve, reject) => {

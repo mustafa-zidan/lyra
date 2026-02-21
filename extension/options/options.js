@@ -128,10 +128,7 @@ function setStatus(message, type) {
 
 async function getSettings() {
   return new Promise((resolve) => {
-    api.storage.local.get(
-      { serverUrl: DEFAULT_SERVER_URL, defaultVoice: DEFAULT_VOICE },
-      resolve,
-    );
+    api.storage.local.get({ serverUrl: DEFAULT_SERVER_URL, defaultVoice: DEFAULT_VOICE }, resolve);
   });
 }
 

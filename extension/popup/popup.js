@@ -147,10 +147,7 @@ function setPlaying(playing) {
 
 async function getSettings() {
   return new Promise((resolve) => {
-    api.storage.local.get(
-      { serverUrl: 'http://127.0.0.1:8000', defaultVoice: 'leo' },
-      resolve,
-    );
+    api.storage.local.get({ serverUrl: 'http://127.0.0.1:8000', defaultVoice: 'leo' }, resolve);
   });
 }
 
