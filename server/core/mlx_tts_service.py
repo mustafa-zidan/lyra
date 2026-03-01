@@ -45,6 +45,7 @@ MODELS: dict[str, dict[str, Any]] = {
     "mlx-community/Kokoro-82M-bf16": {
         "name": "Kokoro 82M",
         "description": "Fast multilingual TTS with 50+ preset voices",
+        "load_kwargs": {},
         "languages": ["EN", "JA", "ZH", "FR", "ES", "IT", "PT", "HI"],
         "sample_rate": 24000,
         "voices": [
@@ -109,36 +110,24 @@ MODELS: dict[str, dict[str, Any]] = {
             {"id": "pm_alex", "name": "Alex (Portuguese ♂)"},
         ],
     },
-    "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-bf16": {
-        "name": "Qwen3-TTS 0.6B",
-        "description": "Alibaba multilingual TTS with preset voices",
-        "languages": ["ZH", "EN", "JA", "KO"],
+    "mlx-community/OuteTTS-1.0-0.6B-fp16": {
+        "name": "OuteTTS 0.6B",
+        "description": "Efficient English TTS",
+        "languages": ["EN"],
         "sample_rate": 24000,
+        "load_kwargs": {},
         "voices": [
-            {"id": "Chelsie", "name": "Chelsie"},
-            {"id": "Ethan", "name": "Ethan"},
-            {"id": "Vivian", "name": "Vivian"},
-            {"id": "Serena", "name": "Serena"},
-            {"id": "Dylan", "name": "Dylan"},
-            {"id": "Eric", "name": "Eric"},
-            {"id": "Ryan", "name": "Ryan"},
-            {"id": "Aiden", "name": "Aiden"},
+            {"id": "default", "name": "Default"},
         ],
     },
     "mlx-community/Soprano-1.1-80M-bf16": {
         "name": "Soprano 80M",
         "description": "Lightweight high-quality English TTS",
         "languages": ["EN"],
-        "sample_rate": 24000,
-        "voices": [
-            {"id": "default", "name": "Default"},
-        ],
-    },
-    "mlx-community/OuteTTS-1.0-0.6B-fp16": {
-        "name": "OuteTTS 0.6B",
-        "description": "Efficient English TTS",
-        "languages": ["EN"],
-        "sample_rate": 24000,
+        "sample_rate": 32000,
+        # The mlx-community weights include extra parameters not present in the
+        # current mlx-audio soprano module; strict=False silently skips them.
+        "load_kwargs": {"strict": False},
         "voices": [
             {"id": "default", "name": "Default"},
         ],
@@ -287,7 +276,8 @@ class MLXTTSService:
     def _load_model(self, model_id: str) -> Any:
         if model_id not in self._loaded:
             logger.info("Loading MLX model %s …", model_id)
-            self._loaded[model_id] = _mlx_load_model(model_id)
+            load_kwargs = MODELS.get(model_id, {}).get("load_kwargs", {})
+            self._loaded[model_id] = _mlx_load_model(model_id, **load_kwargs)
         return self._loaded[model_id]
 
     def _generate_sync(
