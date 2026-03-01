@@ -2,9 +2,11 @@
 
 ## Overview
 
-**Goal**: Build a web server that bridges the `eurydice-tts` library to HTTP clients, and browser extensions (Chrome + Firefox) that leverage this server to read aloud text selected on any web page.
+**Goal**: Build a web server that bridges the `eurydice-tts` library to HTTP clients, and browser extensions (Chrome +
+Firefox) that leverage this server to read aloud text selected on any web page.
 
 **Stack**:
+
 - Python 3.12 + uv + FastAPI (server)
 - Vanilla JS + Manifest V3 (browser extensions)
 
@@ -113,9 +115,11 @@ lyra/
 ## Server API Specification
 
 ### `GET /`
+
 Returns API metadata.
 
 **Response 200:**
+
 ```json
 {
   "name": "Lyra",
@@ -128,9 +132,11 @@ Returns API metadata.
 ---
 
 ### `GET /health`
+
 Checks if the TTS backend is available.
 
 **Response 200:**
+
 ```json
 {
   "status": "ok",
@@ -140,6 +146,7 @@ Checks if the TTS backend is available.
 ```
 
 **Response 503** (TTS backend unavailable):
+
 ```json
 {
   "status": "degraded",
@@ -151,20 +158,47 @@ Checks if the TTS backend is available.
 ---
 
 ### `GET /voices`
+
 Lists all supported TTS voices.
 
 **Response 200:**
+
 ```json
 {
   "voices": [
-    { "id": "tara", "name": "Tara" },
-    { "id": "leah", "name": "Leah" },
-    { "id": "jess", "name": "Jess" },
-    { "id": "leo",  "name": "Leo", "default": true },
-    { "id": "dan",  "name": "Dan" },
-    { "id": "mia",  "name": "Mia" },
-    { "id": "zac",  "name": "Zac" },
-    { "id": "zoe",  "name": "Zoe" }
+    {
+      "id": "tara",
+      "name": "Tara"
+    },
+    {
+      "id": "leah",
+      "name": "Leah"
+    },
+    {
+      "id": "jess",
+      "name": "Jess"
+    },
+    {
+      "id": "leo",
+      "name": "Leo",
+      "default": true
+    },
+    {
+      "id": "dan",
+      "name": "Dan"
+    },
+    {
+      "id": "mia",
+      "name": "Mia"
+    },
+    {
+      "id": "zac",
+      "name": "Zac"
+    },
+    {
+      "id": "zoe",
+      "name": "Zoe"
+    }
   ]
 }
 ```
@@ -172,9 +206,11 @@ Lists all supported TTS voices.
 ---
 
 ### `POST /tts/generate`
+
 Generates audio from text. Returns WAV audio binary.
 
 **Request body (JSON):**
+
 ```json
 {
   "text": "Hello, world!",
@@ -190,6 +226,7 @@ Generates audio from text. Returns WAV audio binary.
 | `format` | string | No       | "wav"   | Only "wav" supported currently |
 
 **Response 200:**
+
 - `Content-Type: audio/wav`
 - `X-Audio-Duration: <float seconds>`
 - `X-Cached: <true|false>`
@@ -197,15 +234,21 @@ Generates audio from text. Returns WAV audio binary.
 - Body: raw WAV binary
 
 **Response 400:** Invalid voice or format
+
 ```json
-{ "detail": "Invalid voice: 'unknown'. Valid voices: tara, leah, jess, leo, dan, mia, zac, zoe" }
+{
+  "detail": "Invalid voice: 'unknown'. Valid voices: tara, leah, jess, leo, dan, mia, zac, zoe"
+}
 ```
 
 **Response 422:** Validation error (e.g., text too long or empty)
 
 **Response 503:** TTS backend not available
+
 ```json
-{ "detail": "TTS service is not available. Check provider configuration." }
+{
+  "detail": "TTS service is not available. Check provider configuration."
+}
 ```
 
 ---
@@ -214,15 +257,15 @@ Generates audio from text. Returns WAV audio binary.
 
 Environment variables (prefix: `EURYDICE_`):
 
-| Variable                   | Default                    | Description                          |
-|----------------------------|----------------------------|--------------------------------------|
-| `EURYDICE_HOST`            | `127.0.0.1`                | Server bind host                     |
-| `EURYDICE_PORT`            | `8000`                     | Server bind port                     |
-| `EURYDICE_TTS_PROVIDER`    | `auto`                     | Provider: auto/lmstudio/embedded/cpp |
-| `EURYDICE_TTS_SERVER_URL`  | `http://localhost:1234/v1`  | LM Studio server URL                 |
-| `EURYDICE_DEFAULT_VOICE`   | `leo`                      | Default TTS voice                    |
-| `EURYDICE_CORS_ORIGINS`    | `*`                        | Comma-separated CORS allowed origins |
-| `EURYDICE_LOG_LEVEL`       | `info`                     | Logging level                        |
+| Variable                  | Default                    | Description                          |
+|---------------------------|----------------------------|--------------------------------------|
+| `EURYDICE_HOST`           | `127.0.0.1`                | Server bind host                     |
+| `EURYDICE_PORT`           | `8000`                     | Server bind port                     |
+| `EURYDICE_TTS_PROVIDER`   | `auto`                     | Provider: auto/lmstudio/embedded/cpp |
+| `EURYDICE_TTS_SERVER_URL` | `http://localhost:1234/v1` | LM Studio server URL                 |
+| `EURYDICE_DEFAULT_VOICE`  | `leo`                      | Default TTS voice                    |
+| `EURYDICE_CORS_ORIGINS`   | `*`                        | Comma-separated CORS allowed origins |
+| `EURYDICE_LOG_LEVEL`      | `info`                     | Logging level                        |
 
 ---
 
@@ -231,10 +274,12 @@ Environment variables (prefix: `EURYDICE_`):
 ### Manifest V3 Compatibility
 
 The extension targets **Manifest V3** which is supported by:
+
 - **Chrome 88+** (Manifest V3 introduced)
 - **Firefox 109+** (MV3 support added)
 
 Cross-browser JavaScript API pattern:
+
 ```javascript
 const api = typeof browser !== 'undefined' ? browser : chrome;
 ```
@@ -247,8 +292,16 @@ Firefox requires `"browser_specific_settings"` in manifest for AMO submission.
 
 ```json
 {
-  "permissions": ["contextMenus", "storage", "activeTab", "scripting"],
-  "host_permissions": ["http://127.0.0.1:8000/*", "http://localhost:8000/*"]
+  "permissions": [
+    "contextMenus",
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8000/*",
+    "http://localhost:8000/*"
+  ]
 }
 ```
 
@@ -257,10 +310,12 @@ Firefox requires `"browser_specific_settings"` in manifest for AMO submission.
 ### Extension Features
 
 **Context Menu:**
+
 - Right-click → "Read selection aloud with Lyra"
 - Appears only when text is selected
 
 **Popup (toolbar icon):**
+
 - Read page button (extracts & reads `document.body.innerText`)
 - Read selection button (reads currently highlighted text)
 - Stop button
@@ -268,12 +323,14 @@ Firefox requires `"browser_specific_settings"` in manifest for AMO submission.
 - Link to options
 
 **Content Script (`content.js`):**
+
 - Injected into all `http://*` and `https://*` pages
 - Handles floating playback UI (play/pause/stop bar at bottom of page)
 - Extracts clean text from selection (`window.getSelection()`)
 - Listens for messages from background worker
 
 **Background Service Worker (`background.js`):**
+
 - Registers context menu on install
 - Makes `fetch()` calls to the TTS server
 - Manages `AudioContext` for playback
@@ -281,6 +338,7 @@ Firefox requires `"browser_specific_settings"` in manifest for AMO submission.
 - Sends status updates to active tabs
 
 **Options Page:**
+
 - Server URL (default: `http://127.0.0.1:8000`)
 - Default voice selector
 - Text chunk size (for long-text splitting)
@@ -290,7 +348,8 @@ Firefox requires `"browser_specific_settings"` in manifest for AMO submission.
 
 ### Text Chunking Strategy
 
-Long text is split into sentence-length chunks (~500 characters, split at sentence boundaries) and streamed sequentially for perceived low latency:
+Long text is split into sentence-length chunks (~500 characters, split at sentence boundaries) and streamed sequentially
+for perceived low latency:
 
 1. Split at `.`, `!`, `?` followed by whitespace
 2. Batch into chunks ≤ 500 chars
@@ -309,14 +368,14 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",
     "pydantic-settings>=2.7.0",
-    "eurydice-tts[audio]",  # local path or PyPI
+    "eurydice-tts[audio]", # local path or PyPI
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.25.0",
-    "httpx>=0.28.0",         # async test client for FastAPI
+    "httpx>=0.28.0", # async test client for FastAPI
     "ruff>=0.9.0",
 ]
 ```
@@ -374,6 +433,7 @@ dev = [
 ## Quality Gates
 
 Before marking any phase complete:
+
 1. `uv run ruff check .` → 0 errors
 2. `uv run ruff format --check .` → no diffs
 3. `uv run pytest` → all tests pass

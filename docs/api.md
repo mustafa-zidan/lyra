@@ -58,14 +58,46 @@ Lists all voices supported by the eurydice-tts library.
 ```json
 {
   "voices": [
-    { "id": "tara", "name": "Tara", "default": false },
-    { "id": "leah", "name": "Leah", "default": false },
-    { "id": "jess", "name": "Jess", "default": false },
-    { "id": "leo",  "name": "Leo",  "default": true  },
-    { "id": "dan",  "name": "Dan",  "default": false },
-    { "id": "mia",  "name": "Mia",  "default": false },
-    { "id": "zac",  "name": "Zac",  "default": false },
-    { "id": "zoe",  "name": "Zoe",  "default": false }
+    {
+      "id": "tara",
+      "name": "Tara",
+      "default": false
+    },
+    {
+      "id": "leah",
+      "name": "Leah",
+      "default": false
+    },
+    {
+      "id": "jess",
+      "name": "Jess",
+      "default": false
+    },
+    {
+      "id": "leo",
+      "name": "Leo",
+      "default": true
+    },
+    {
+      "id": "dan",
+      "name": "Dan",
+      "default": false
+    },
+    {
+      "id": "mia",
+      "name": "Mia",
+      "default": false
+    },
+    {
+      "id": "zac",
+      "name": "Zac",
+      "default": false
+    },
+    {
+      "id": "zoe",
+      "name": "Zoe",
+      "default": false
+    }
   ]
 }
 ```
@@ -97,11 +129,11 @@ Synthesises speech from text and returns a WAV audio file.
 - **Content-Type**: `audio/wav`
 - **Body**: Raw WAV binary
 
-| Response header     | Description                               |
-|---------------------|-------------------------------------------|
-| `X-Audio-Duration`  | Duration of the generated audio (seconds) |
-| `X-Cached`          | `"true"` if served from cache             |
-| `X-Voice`           | Voice ID used for this response           |
+| Response header    | Description                               |
+|--------------------|-------------------------------------------|
+| `X-Audio-Duration` | Duration of the generated audio (seconds) |
+| `X-Cached`         | `"true"` if served from cache             |
+| `X-Voice`          | Voice ID used for this response           |
 
 ### Response 400: Invalid voice or format
 
@@ -118,7 +150,10 @@ Synthesises speech from text and returns a WAV audio file.
   "detail": [
     {
       "type": "string_too_short",
-      "loc": ["body", "text"],
+      "loc": [
+        "body",
+        "text"
+      ],
       "msg": "String should have at least 1 character",
       "input": ""
     }
@@ -181,15 +216,15 @@ with httpx.Client(base_url="http://127.0.0.1:8000") as client:
 
 ```javascript
 const response = await fetch('http://127.0.0.1:8000/tts/generate', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ text: 'Hello!', voice: 'leo' }),
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({text: 'Hello!', voice: 'leo'}),
 });
 
 if (!response.ok) throw new Error(await response.json().then(d => d.detail));
 
 const arrayBuffer = await response.arrayBuffer();
 const audio = new Audio();
-audio.src = URL.createObjectURL(new Blob([arrayBuffer], { type: 'audio/wav' }));
+audio.src = URL.createObjectURL(new Blob([arrayBuffer], {type: 'audio/wav'}));
 audio.play();
 ```

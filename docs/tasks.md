@@ -2,21 +2,9 @@
 
 ## In Progress
 
-- [ ] AGPL-3.0 license + SPDX headers across all source files
-- [ ] Fix background.js addEventListener bug + add chunk-highlight messaging
-- [ ] Implement page highlighting in content.js (CSS Highlight API + fallback)
-- [ ] JS tooling: package.json, eslint.config.js, .prettierrc.json
-- [ ] Pre-commit hooks: .pre-commit-config.yaml
-- [ ] Playwright extension tests: config, fixtures, helpers, test files
-- [ ] GitHub Actions: test.yml + release.yml
-
 ## To Do
 
-
 ## Backlog
-- [ ] switch to extensions typescript if possible
-- [ ] restyle the extension 
-- [ ] generate a nicer icon
 
 ## Done
 
@@ -35,3 +23,13 @@
 - [x] Extension popup: extension/popup/
 - [x] Extension options page: extension/options/
 - [x] README + docs/api.md
+- [x] AGPL-3.0 license + SPDX headers across all source files
+- [x] Fix background.js addEventListener bug + add chunk-highlight messaging
+- [x] Implement page highlighting in content.js (CSS Highlight API + fallback)
+- [x] JS tooling: package.json, eslint.config.js, .prettierrc.json
+- [x] Pre-commit hooks: .pre-commit-config.yaml
+- [x] Playwright extension tests: config, fixtures, helpers, test files
+- [x] GitHub Actions: test.yml + release.yml
+- [x] Generate a nicer icon (SVG + Playwright PNG generation script)
+- [x] Restyle the extension — black and white flat design (popup, options, status bar)
+- [x] Switch extension to TypeScript (src/ → extension/ compiled output)
