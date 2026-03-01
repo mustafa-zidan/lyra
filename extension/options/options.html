@@ -40,14 +40,26 @@
         <h2>Defaults</h2>
 
         <div class="field">
+          <label for="model-select" class="field__label">
+            Model
+            <span class="field__hint">
+              TTS model to use. Changing the model updates the voice list.
+            </span>
+          </label>
+          <select id="model-select" class="field__input">
+            <option value="mlx-community/Kokoro-82M-bf16">Kokoro 82M (default)</option>
+          </select>
+        </div>
+
+        <div class="field">
           <label for="default-voice" class="field__label">
             Default voice
             <span class="field__hint">
-              Used when no voice is selected. Available voices are loaded from the server.
+              Used when no voice is selected in the popup.
             </span>
           </label>
           <select id="default-voice" class="field__input">
-            <option value="leo">Leo (default)</option>
+            <option value="af_heart">Heart (American ♀)</option>
           </select>
         </div>
       </section>

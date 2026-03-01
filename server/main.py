@@ -10,9 +10,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from server.api.models import RootResponse
-from server.api.routes import health, tts, voices
+from server.api.routes import health, models, tts, voices
 from server.core.config import Settings, settings
-from server.core.tts_service import TTSService
 
 logging.basicConfig(level=settings.log_level.upper())
 logger = logging.getLogger(__name__)
@@ -21,10 +20,20 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage startup and shutdown of the TTS service."""
-    tts_service = TTSService(app.state.settings)
+    cfg: Settings = app.state.settings
+
+    if cfg.tts_backend == "mlx_audio":
+        from server.core.mlx_tts_service import MLXTTSService
+
+        tts_service = MLXTTSService(cfg)
+    else:
+        from server.core.tts_service import TTSService
+
+        tts_service = TTSService(cfg)  # type: ignore[assignment]
+
     app.state.tts = tts_service
     await tts_service.startup()
-    logger.info("Lyra server started")
+    logger.info("Lyra server started (backend: %s)", cfg.tts_backend)
     yield
     await tts_service.shutdown()
     logger.info("Lyra server shut down")
@@ -38,17 +47,15 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
         title="Lyra",
         version="0.1.0",
         description=(
-            "HTTP API server that exposes the eurydice-tts library as a REST service. "
+            "HTTP API server exposing TTS via mlx-audio or eurydice-tts. "
             "Designed for use with the Lyra browser extension."
         ),
-        license_info={"name": "MIT"},
+        license_info={"name": "AGPL-3.0-only"},
         lifespan=lifespan,
     )
 
-    # Store settings on app state so route handlers can access them
     app.state.settings = cfg
 
-    # CORS: required for browser extension fetch() calls
     cors_origins = cfg.cors_origins_list()
     app.add_middleware(
         CORSMiddleware,
@@ -56,12 +63,12 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
         allow_credentials=False,
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type", "Accept"],
-        expose_headers=["X-Audio-Duration", "X-Cached", "X-Voice"],
+        expose_headers=["X-Audio-Duration", "X-Cached", "X-Voice", "X-Model"],
     )
 
-    # Routes
     app.include_router(health.router)
     app.include_router(voices.router)
+    app.include_router(models.router)
     app.include_router(tts.router)
 
     @app.get("/", response_model=RootResponse, tags=["Status"], summary="API info")
@@ -69,7 +76,7 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
         return RootResponse(
             name="Lyra",
             version="0.1.0",
-            description="TTS API powered by eurydice-tts",
+            description="TTS API powered by mlx-audio / eurydice-tts",
             docs="/docs",
         )
 

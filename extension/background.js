@@ -4,7 +4,7 @@
  *
  * Responsibilities:
  *  - Register the context-menu item
- *  - Fetch audio from the Eurydice server
+ *  - Fetch audio from the Eurydice/MLX server
  *  - Play audio injected into the active tab
  *  - Broadcast playback state and chunk highlights to content scripts
  */
@@ -15,14 +15,15 @@ const api = typeof browser !== 'undefined' ? browser : typeof chrome !== 'undefi
 // Constants / defaults
 // ---------------------------------------------------------------------------
 const DEFAULT_SERVER_URL = 'http://127.0.0.1:8000';
-const DEFAULT_VOICE = 'leo';
+const DEFAULT_VOICE = 'af_heart';
+const DEFAULT_MODEL = 'mlx-community/Kokoro-82M-bf16';
 const CONTEXT_MENU_ID = 'lyra-read-selection';
 // ---------------------------------------------------------------------------
 // Storage helpers
 // ---------------------------------------------------------------------------
 async function getSettings() {
     return new Promise((resolve) => {
-        api.storage.local.get({ serverUrl: DEFAULT_SERVER_URL, defaultVoice: DEFAULT_VOICE }, (items) => {
+        api.storage.local.get({ serverUrl: DEFAULT_SERVER_URL, defaultVoice: DEFAULT_VOICE, selectedModel: DEFAULT_MODEL }, (items) => {
             resolve(items);
         });
     });
@@ -44,8 +45,8 @@ if (api) {
         const text = info.selectionText?.trim();
         if (!text || !tab?.id)
             return;
-        const { serverUrl, defaultVoice } = await getSettings();
-        await speakInTab(tab.id, text, defaultVoice, serverUrl);
+        const { serverUrl, defaultVoice, selectedModel } = await getSettings();
+        await speakInTab(tab.id, text, defaultVoice, serverUrl, selectedModel);
     });
     // ---------------------------------------------------------------------------
     // Message handling (from popup / content script)
@@ -62,11 +63,11 @@ if (api) {
 async function handleMessage(message, sender) {
     const { action } = message;
     if (action === 'speak') {
-        const { text, voice, serverUrl } = message;
+        const { text, voice, serverUrl, model } = message;
         const tabId = sender.tab?.id ?? (await getActiveTabId());
         if (!tabId)
             return { ok: false, error: 'No active tab' };
-        speakInTab(tabId, text, voice, serverUrl).catch(console.error);
+        speakInTab(tabId, text, voice, serverUrl, model ?? DEFAULT_MODEL).catch(console.error);
         return { ok: true };
     }
     if (action === 'stop') {
@@ -76,9 +77,14 @@ async function handleMessage(message, sender) {
         return { ok: true };
     }
     if (action === 'get-voices') {
-        const { serverUrl } = message;
-        const voices = await fetchVoices(serverUrl ?? DEFAULT_SERVER_URL);
+        const { serverUrl, model } = message;
+        const voices = await fetchVoices(serverUrl ?? DEFAULT_SERVER_URL, model);
         return { ok: true, voices };
+    }
+    if (action === 'get-models') {
+        const { serverUrl } = message;
+        const models = await fetchModels(serverUrl ?? DEFAULT_SERVER_URL);
+        return { ok: true, models };
     }
     if (action === 'health') {
         const { serverUrl } = message;
@@ -93,14 +99,14 @@ async function handleMessage(message, sender) {
 /**
  * Generate speech for each chunk of text, highlighting and playing sequentially.
  */
-async function speakInTab(tabId, text, voice, serverUrl) {
+async function speakInTab(tabId, text, voice, serverUrl, model) {
     notifyTab(tabId, { action: 'playback-started', text });
     try {
         const chunks = chunkText(text);
         for (const chunk of chunks) {
             // Signal content script to highlight this chunk before fetching audio
             notifyTab(tabId, { action: 'chunk-highlight', text: chunk });
-            const audioBase64 = await fetchTTS(chunk, voice, serverUrl);
+            const audioBase64 = await fetchTTS(chunk, voice, serverUrl, model);
             await api.scripting.executeScript({
                 target: { tabId },
                 func: playAudioInPage,
@@ -119,16 +125,19 @@ async function speakInTab(tabId, text, voice, serverUrl) {
 /**
  * Fetch audio from the TTS server and return it as a base64 data URL.
  */
-async function fetchTTS(text, voice, serverUrl) {
+async function fetchTTS(text, voice, serverUrl, model) {
     const url = `${serverUrl}/tts/generate`;
+    const body = { text, voice: voice || DEFAULT_VOICE };
+    if (model)
+        body.model = model;
     const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voice: voice || DEFAULT_VOICE }),
+        body: JSON.stringify(body),
     });
     if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.detail ?? `Server error ${response.status}`);
+        const json = await response.json().catch(() => ({}));
+        throw new Error(json.detail ?? `Server error ${response.status}`);
     }
     const arrayBuffer = await response.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
@@ -138,14 +147,27 @@ async function fetchTTS(text, voice, serverUrl) {
     return `data:audio/wav;base64,${btoa(binary)}`;
 }
 /**
- * Fetch the list of available voices from the server.
+ * Fetch the list of available voices from the server for a given model.
  */
-async function fetchVoices(serverUrl) {
-    const response = await fetch(`${serverUrl}/voices`);
+async function fetchVoices(serverUrl, model) {
+    const url = new URL(`${serverUrl}/voices`);
+    if (model)
+        url.searchParams.set('model', model);
+    const response = await fetch(url.toString());
     if (!response.ok)
         throw new Error(`Voices request failed: ${response.status}`);
     const data = await response.json();
     return data.voices ?? [];
+}
+/**
+ * Fetch the list of available models from the server.
+ */
+async function fetchModels(serverUrl) {
+    const response = await fetch(`${serverUrl}/models`);
+    if (!response.ok)
+        throw new Error(`Models request failed: ${response.status}`);
+    const data = await response.json();
+    return data.models ?? [];
 }
 /**
  * Fetch server health status.

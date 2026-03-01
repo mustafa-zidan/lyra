@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Health check endpoint."""
 
+from typing import Any
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from server.api.models import HealthResponse
-from server.core.tts_service import TTSService
 
 router = APIRouter()
 
@@ -18,7 +19,7 @@ router = APIRouter()
     tags=["Status"],
 )
 async def health(request: Request) -> JSONResponse:
-    tts: TTSService = request.app.state.tts
+    tts: Any = request.app.state.tts
     available = tts.is_available
     payload = HealthResponse(
         status="ok" if available else "degraded",

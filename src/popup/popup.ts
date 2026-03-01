@@ -28,6 +28,7 @@ interface Voice {
 interface Settings {
   serverUrl: string;
   defaultVoice: string;
+  selectedModel: string;
 }
 
 interface BackgroundResponse {
@@ -42,15 +43,15 @@ interface BackgroundResponse {
 // ---------------------------------------------------------------------------
 
 async function init(): Promise<void> {
-  const { serverUrl, defaultVoice } = await getSettings();
+  const { serverUrl, defaultVoice, selectedModel } = await getSettings();
 
   // Check server health
   const health = await sendBackground({ action: 'health', serverUrl });
   updateStatusBadge(health.available ?? false);
 
-  // Load voices
+  // Load voices for the selected model
   try {
-    const { voices } = await sendBackground({ action: 'get-voices', serverUrl });
+    const { voices } = await sendBackground({ action: 'get-voices', serverUrl, model: selectedModel });
     populateVoices(voices ?? [], defaultVoice);
     btnSelection.disabled = false;
     btnPage.disabled = false;
@@ -65,8 +66,8 @@ async function init(): Promise<void> {
   });
 
   // Button handlers
-  btnSelection.addEventListener('click', () => readSelection(serverUrl));
-  btnPage.addEventListener('click', () => readPage(serverUrl));
+  btnSelection.addEventListener('click', () => readSelection(serverUrl, selectedModel));
+  btnPage.addEventListener('click', () => readPage(serverUrl, selectedModel));
   btnStop.addEventListener('click', stopPlayback);
 }
 
@@ -74,7 +75,7 @@ async function init(): Promise<void> {
 // Actions
 // ---------------------------------------------------------------------------
 
-async function readSelection(serverUrl: string): Promise<void> {
+async function readSelection(serverUrl: string, model: string): Promise<void> {
   const [tab] = await getTabs();
   if (!tab?.id) return;
 
@@ -87,10 +88,10 @@ async function readSelection(serverUrl: string): Promise<void> {
   }
 
   setPlaying(true);
-  await sendBackground({ action: 'speak', text, voice: voiceSelect.value, serverUrl });
+  await sendBackground({ action: 'speak', text, voice: voiceSelect.value, serverUrl, model });
 }
 
-async function readPage(serverUrl: string): Promise<void> {
+async function readPage(serverUrl: string, model: string): Promise<void> {
   const [tab] = await getTabs();
   if (!tab?.id) return;
 
@@ -103,7 +104,7 @@ async function readPage(serverUrl: string): Promise<void> {
   if (!text) return;
 
   setPlaying(true);
-  await sendBackground({ action: 'speak', text, voice: voiceSelect.value, serverUrl });
+  await sendBackground({ action: 'speak', text, voice: voiceSelect.value, serverUrl, model });
 }
 
 async function stopPlayback(): Promise<void> {
@@ -155,9 +156,12 @@ function setPlaying(playing: boolean): void {
 
 async function getSettings(): Promise<Settings> {
   return new Promise((resolve) => {
-    api.storage.local.get({ serverUrl: 'http://127.0.0.1:8000', defaultVoice: 'leo' }, (items) => {
-      resolve(items as unknown as Settings);
-    });
+    api.storage.local.get(
+      { serverUrl: 'http://127.0.0.1:8000', defaultVoice: 'af_heart', selectedModel: 'mlx-community/Kokoro-82M-bf16' },
+      (items) => {
+        resolve(items as unknown as Settings);
+      },
+    );
   });
 }
 

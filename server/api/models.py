@@ -16,15 +16,19 @@ class TTSRequest(BaseModel):
     )
     voice: str | None = Field(
         default=None,
+        description="Voice ID to use. Defaults to the server's configured default voice.",
+        examples=["af_heart"],
+    )
+    model: str | None = Field(
+        default=None,
         description=(
-            "Voice ID to use.  One of: tara, leah, jess, leo, dan, mia, zac, zoe. "
-            "Defaults to the server's configured default voice."
+            "Model ID (HuggingFace repo). Defaults to the server's configured default model."
         ),
-        examples=["leo"],
+        examples=["mlx-community/Kokoro-82M-bf16"],
     )
     format: str = Field(
         default="wav",
-        description="Audio format.  Currently only 'wav' is supported.",
+        description="Audio format. Currently only 'wav' is supported.",
         examples=["wav"],
     )
 
@@ -40,7 +44,24 @@ class VoiceInfo(BaseModel):
 class VoicesResponse(BaseModel):
     """Response body for ``GET /voices``."""
 
+    model: str | None = Field(default=None, description="Model ID these voices belong to.")
     voices: list[VoiceInfo]
+
+
+class ModelInfo(BaseModel):
+    """Metadata for a single TTS model."""
+
+    id: str = Field(..., description="Model ID (HuggingFace repo or backend name).")
+    name: str = Field(..., description="Human-readable model name.")
+    description: str = Field(default="", description="Short description.")
+    languages: list[str] = Field(default_factory=list, description="Supported language codes.")
+    default: bool = Field(default=False, description="Whether this is the server default model.")
+
+
+class ModelsResponse(BaseModel):
+    """Response body for ``GET /models``."""
+
+    models: list[ModelInfo]
 
 
 class HealthResponse(BaseModel):

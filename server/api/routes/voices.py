@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Voices listing endpoint."""
 
-from eurydice import Eurydice
-from fastapi import APIRouter, Request
+from typing import Any
+
+from fastapi import APIRouter, Query, Request
 
 from server.api.models import VoiceInfo, VoicesResponse
-from server.core.config import Settings
 
 router = APIRouter()
 
@@ -14,19 +14,13 @@ router = APIRouter()
     "/voices",
     response_model=VoicesResponse,
     summary="List voices",
-    description="Returns all TTS voices supported by the eurydice-tts library.",
+    description="Returns TTS voices for the given model (or the server default model).",
     tags=["TTS"],
 )
-async def list_voices(request: Request) -> VoicesResponse:
-    settings: Settings = request.app.state.settings
-    default_voice = settings.default_voice
-
-    voices = [
-        VoiceInfo(
-            id=v.value,
-            name=v.value.capitalize(),
-            default=(v.value == default_voice),
-        )
-        for v in Eurydice.available_voices()
-    ]
-    return VoicesResponse(voices=voices)
+async def list_voices(
+    request: Request,
+    model: str | None = Query(default=None, description="Model ID to list voices for."),
+) -> VoicesResponse:
+    tts: Any = request.app.state.tts
+    voices = [VoiceInfo(**v) for v in tts.list_voices(model)]
+    return VoicesResponse(model=model, voices=voices)

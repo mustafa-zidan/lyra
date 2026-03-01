@@ -2,23 +2,27 @@
 """TTS service: manages the Eurydice client lifecycle."""
 
 import logging
+from typing import Any
 
 from eurydice import Eurydice
 from eurydice.cache import MemoryCache
 from eurydice.config import TTSConfig
 from eurydice.exceptions import EurydiceError
-from eurydice.types import AudioFormat, AudioResult, Voice
+from eurydice.types import AudioFormat, Voice
 
 from server.core.config import Settings
+from server.core.mlx_tts_service import AudioResult
 
 logger = logging.getLogger(__name__)
+
+_EURYDICE_MODEL_ID = "eurydice"
 
 
 class TTSService:
     """Singleton wrapper around :class:`~eurydice.Eurydice`.
 
-    Manages startup/shutdown via FastAPI's lifespan context and exposes a
-    simple :meth:`generate` coroutine for the route handlers.
+    Manages startup/shutdown via FastAPI's lifespan context and exposes the
+    same duck-typed interface as :class:`~server.core.mlx_tts_service.MLXTTSService`.
     """
 
     def __init__(self, settings: Settings) -> None:
@@ -62,28 +66,40 @@ class TTSService:
         except AttributeError:
             return None
 
+    def list_models(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": _EURYDICE_MODEL_ID,
+                "name": "Eurydice TTS",
+                "description": "eurydice-tts local provider",
+                "languages": ["EN"],
+                "default": True,
+            }
+        ]
+
+    def list_voices(self, model_id: str | None = None) -> list[dict[str, Any]]:  # noqa: ARG002
+        default = self._settings.default_voice
+        return [
+            {
+                "id": v.value,
+                "name": v.value.capitalize(),
+                "default": v.value == default,
+            }
+            for v in Eurydice.available_voices()
+        ]
+
     async def generate(
         self,
         text: str,
         voice: str | None = None,
-        format: AudioFormat = AudioFormat.WAV,
+        model_id: str | None = None,  # noqa: ARG002
     ) -> AudioResult:
-        """Generate audio from *text*.
-
-        Parameters
-        ----------
-        text:
-            Input text to synthesise.
-        voice:
-            Voice ID string (e.g. ``"tara"``).  Falls back to the configured
-            default when ``None``.
-        format:
-            Output audio format.  Currently only WAV is supported.
-
-        Raises
-        ------
-        EurydiceError
-            Propagated from the underlying provider on failure.
-        """
+        """Generate audio from *text* and return a shared :class:`AudioResult`."""
         voice_obj: Voice | None = Voice.from_string(voice) if voice else None
-        return await self._client.generate(text, voice=voice_obj, format=format)
+        result = await self._client.generate(text, voice=voice_obj, format=AudioFormat.WAV)
+        return AudioResult(
+            audio_data=result.audio_data,
+            duration=result.duration,
+            cached=result.cached,
+            voice=result.voice.value,
+        )

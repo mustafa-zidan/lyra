@@ -3,12 +3,13 @@
  */
 const api = typeof browser !== 'undefined' ? browser : chrome;
 const DEFAULT_SERVER_URL = 'http://127.0.0.1:8000';
-const DEFAULT_VOICE = 'leo';
-const KNOWN_VOICES = ['tara', 'leah', 'jess', 'leo', 'dan', 'mia', 'zac', 'zoe'];
+const DEFAULT_VOICE = 'af_heart';
+const DEFAULT_MODEL = 'mlx-community/Kokoro-82M-bf16';
 // ---------------------------------------------------------------------------
 // DOM refs
 // ---------------------------------------------------------------------------
 const serverUrlInput = document.getElementById('server-url');
+const modelSelect = document.getElementById('model-select');
 const defaultVoiceSelect = document.getElementById('default-voice');
 const btnCheck = document.getElementById('btn-check');
 const btnSave = document.getElementById('btn-save');
@@ -19,18 +20,22 @@ const saveMsg = document.getElementById('save-msg');
 // Load saved settings
 // ---------------------------------------------------------------------------
 async function loadSettings() {
-    const { serverUrl, defaultVoice } = await getSettings();
+    const { serverUrl, defaultVoice, selectedModel } = await getSettings();
     serverUrlInput.value = serverUrl;
-    populateVoices(KNOWN_VOICES, defaultVoice);
+    // Try to populate models and voices from the server
     try {
-        const response = await api.runtime.sendMessage({ action: 'get-voices', serverUrl });
-        if (response?.voices?.length) {
-            populateVoices(response.voices.map((v) => v.id), defaultVoice);
+        const modelsResp = await api.runtime.sendMessage({ action: 'get-models', serverUrl });
+        if (modelsResp?.models?.length) {
+            populateModels(modelsResp.models, selectedModel);
+        }
+        else {
+            populateModels([], selectedModel);
         }
     }
     catch {
-        // Server may be offline; use static list
+        populateModels([], selectedModel);
     }
+    await refreshVoices(serverUrl, modelSelect.value || selectedModel, defaultVoice);
 }
 // ---------------------------------------------------------------------------
 // Check server connectivity
@@ -43,51 +48,81 @@ async function checkServer() {
     }
     setStatus('Checking…', 'idle');
     try {
-        const response = await api.runtime.sendMessage({ action: 'health', serverUrl: url });
-        if (response?.available) {
-            setStatus(`Connected ✓  (provider: ${response.status ?? 'ok'})`, 'ok');
-            const vResp = await api.runtime.sendMessage({ action: 'get-voices', serverUrl: url });
-            if (vResp?.voices?.length) {
-                populateVoices(vResp.voices.map((v) => v.id), defaultVoiceSelect.value);
-            }
-        }
-        else {
+        const healthResp = await api.runtime.sendMessage({ action: 'health', serverUrl: url });
+        if (!healthResp?.available) {
             setStatus('Server reachable but TTS backend offline.', 'error');
+            return;
         }
+        setStatus(`Connected ✓  (provider: ${healthResp.status ?? 'ok'})`, 'ok');
+        // Refresh models
+        const modelsResp = await api.runtime.sendMessage({ action: 'get-models', serverUrl: url });
+        if (modelsResp?.models?.length) {
+            populateModels(modelsResp.models, modelSelect.value);
+        }
+        // Refresh voices for current model
+        await refreshVoices(url, modelSelect.value, defaultVoiceSelect.value);
     }
     catch (err) {
         setStatus(`Cannot reach server: ${err.message}`, 'error');
     }
 }
 // ---------------------------------------------------------------------------
-// Save / Reset
-// ---------------------------------------------------------------------------
-async function saveSettings() {
-    const serverUrl = serverUrlInput.value.trim() || DEFAULT_SERVER_URL;
-    const defaultVoice = defaultVoiceSelect.value || DEFAULT_VOICE;
-    await new Promise((resolve) => {
-        api.storage.local.set({ serverUrl, defaultVoice }, resolve);
-    });
-    saveMsg.textContent = 'Settings saved!';
-    setTimeout(() => {
-        saveMsg.textContent = '';
-    }, 2500);
-}
-function resetSettings() {
-    serverUrlInput.value = DEFAULT_SERVER_URL;
-    populateVoices(KNOWN_VOICES, DEFAULT_VOICE);
-    setStatus('Reset to defaults. Click Save to apply.', 'idle');
-}
-// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-function populateVoices(voiceIds, selectedId) {
+async function refreshVoices(serverUrl, modelId, selectedVoiceId) {
+    try {
+        const resp = await api.runtime.sendMessage({
+            action: 'get-voices',
+            serverUrl,
+            model: modelId,
+        });
+        if (resp?.voices?.length) {
+            populateVoices(resp.voices, selectedVoiceId);
+        }
+        else {
+            populateVoices([], selectedVoiceId);
+        }
+    }
+    catch {
+        populateVoices([], selectedVoiceId);
+    }
+}
+function populateModels(modelList, selectedId) {
+    const current = modelSelect.value;
+    modelSelect.innerHTML = '';
+    if (modelList.length === 0) {
+        // Fallback: add only the default model as a placeholder
+        const opt = document.createElement('option');
+        opt.value = DEFAULT_MODEL;
+        opt.textContent = 'Kokoro 82M (default)';
+        modelSelect.appendChild(opt);
+        modelSelect.value = selectedId || DEFAULT_MODEL;
+        return;
+    }
+    for (const m of modelList) {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = `${m.name} — ${m.languages.join(', ')}`;
+        opt.title = m.description;
+        modelSelect.appendChild(opt);
+    }
+    modelSelect.value = selectedId || current || DEFAULT_MODEL;
+}
+function populateVoices(voices, selectedId) {
     const current = defaultVoiceSelect.value;
     defaultVoiceSelect.innerHTML = '';
-    for (const id of voiceIds) {
+    if (voices.length === 0) {
         const opt = document.createElement('option');
-        opt.value = id;
-        opt.textContent = id.charAt(0).toUpperCase() + id.slice(1);
+        opt.value = DEFAULT_VOICE;
+        opt.textContent = 'Default';
+        defaultVoiceSelect.appendChild(opt);
+        defaultVoiceSelect.value = selectedId || DEFAULT_VOICE;
+        return;
+    }
+    for (const v of voices) {
+        const opt = document.createElement('option');
+        opt.value = v.id;
+        opt.textContent = v.name;
         defaultVoiceSelect.appendChild(opt);
     }
     defaultVoiceSelect.value = selectedId || current || DEFAULT_VOICE;
@@ -98,10 +133,31 @@ function setStatus(message, type) {
 }
 async function getSettings() {
     return new Promise((resolve) => {
-        api.storage.local.get({ serverUrl: DEFAULT_SERVER_URL, defaultVoice: DEFAULT_VOICE }, (items) => {
+        api.storage.local.get({ serverUrl: DEFAULT_SERVER_URL, defaultVoice: DEFAULT_VOICE, selectedModel: DEFAULT_MODEL }, (items) => {
             resolve(items);
         });
     });
+}
+// ---------------------------------------------------------------------------
+// Save / Reset
+// ---------------------------------------------------------------------------
+async function saveSettings() {
+    const serverUrl = serverUrlInput.value.trim() || DEFAULT_SERVER_URL;
+    const defaultVoice = defaultVoiceSelect.value || DEFAULT_VOICE;
+    const selectedModel = modelSelect.value || DEFAULT_MODEL;
+    await new Promise((resolve) => {
+        api.storage.local.set({ serverUrl, defaultVoice, selectedModel }, resolve);
+    });
+    saveMsg.textContent = 'Settings saved!';
+    setTimeout(() => {
+        saveMsg.textContent = '';
+    }, 2500);
+}
+function resetSettings() {
+    serverUrlInput.value = DEFAULT_SERVER_URL;
+    populateModels([], DEFAULT_MODEL);
+    populateVoices([], DEFAULT_VOICE);
+    setStatus('Reset to defaults. Click Save to apply.', 'idle');
 }
 // ---------------------------------------------------------------------------
 // Events
@@ -109,5 +165,10 @@ async function getSettings() {
 btnCheck.addEventListener('click', checkServer);
 btnSave.addEventListener('click', saveSettings);
 btnReset.addEventListener('click', resetSettings);
+// When model changes, refresh voice list
+modelSelect.addEventListener('change', async () => {
+    const serverUrl = serverUrlInput.value.trim() || DEFAULT_SERVER_URL;
+    await refreshVoices(serverUrl, modelSelect.value, '');
+});
 document.addEventListener('DOMContentLoaded', loadSettings);
 export {};
