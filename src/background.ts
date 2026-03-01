@@ -192,7 +192,11 @@ async function speakInTab(
 }
 
 /**
- * Fetch audio from the TTS server and return it as a base64 data URL.
+ * Fetch audio from the TTS server and return raw WAV bytes as a base64 string.
+ * We intentionally do NOT produce a data: URL — pages with strict CSP (e.g. GitHub)
+ * block data: URIs in media-src. The base64 payload is decoded in-page via the Web
+ * Audio API (decodeAudioData) which operates on an ArrayBuffer and is not subject to
+ * media-src CSP restrictions.
  */
 async function fetchTTS(
   text: string,
@@ -219,7 +223,7 @@ async function fetchTTS(
   const bytes = new Uint8Array(arrayBuffer);
   let binary = '';
   for (const b of bytes) binary += String.fromCharCode(b);
-  return `data:audio/wav;base64,${btoa(binary)}`;
+  return btoa(binary); // raw base64, no data: prefix
 }
 
 /**
@@ -303,15 +307,33 @@ async function getActiveTabId(): Promise<number | null> {
 // ---------------------------------------------------------------------------
 
 /**
- * Plays a base64-encoded WAV in the page.
- * Serialised and injected via scripting.executeScript — must be self-contained.
+ * Decodes a raw base64 WAV string and plays it via the Web Audio API.
+ *
+ * Injected into the page via scripting.executeScript — must be self-contained.
+ *
+ * Using Web Audio API (decodeAudioData on an ArrayBuffer) instead of
+ * `new Audio(dataUrl)` deliberately sidesteps the page's media-src CSP: the
+ * directive only governs URL-based media resources, not in-memory ArrayBuffers.
  */
-function playAudioInPage(audioDataUrl: string): Promise<void> {
+function playAudioInPage(base64Wav: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const audio = new Audio(audioDataUrl);
-    audio.onended = () => resolve();
-    audio.onerror = (e) => reject(new Error(`Audio playback error: ${(e as ErrorEvent).message}`));
-    audio.play().catch(reject);
+    // Decode base64 → ArrayBuffer without constructing any URL
+    const binary = atob(base64Wav);
+    const buf = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) buf[i] = binary.charCodeAt(i);
+
+    const ctx = new AudioContext();
+    ctx.decodeAudioData(
+      buf.buffer,
+      (decoded) => {
+        const source = ctx.createBufferSource();
+        source.buffer = decoded;
+        source.connect(ctx.destination);
+        source.onended = () => { ctx.close(); resolve(); };
+        source.start(0);
+      },
+      (err) => reject(new Error(`Audio decode error: ${err}`)),
+    );
   });
 }
 
