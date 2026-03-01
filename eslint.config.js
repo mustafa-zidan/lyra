@@ -1,35 +1,54 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import js from '@eslint/js';
 import globals from 'globals';
+import tsEslint from 'typescript-eslint';
 
-export default [
+export default tsEslint.config(
   js.configs.recommended,
   {
+    // TypeScript source files
+    files: ['src/**/*.ts'],
+    extends: [...tsEslint.configs.recommended],
     languageOptions: {
-      ecmaVersion: 2022,
-      sourceType: 'script', // extension files are plain scripts, not ESM
       globals: {
         ...globals.browser,
         ...globals.webextensions,
-        // Explicit shims used throughout the extension
         chrome: 'readonly',
         browser: 'readonly',
       },
+      parserOptions: { project: './tsconfig.json' },
     },
     rules: {
       'no-console': 'off',
-      'no-unused-vars': ['error', { argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_?' }],
+      'no-undef': 'off',
       eqeqeq: ['error', 'always'],
       'no-var': 'error',
       'prefer-const': 'error',
+      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_?' },
+      ],
     },
   },
   {
-    // chunk-text.js is an ES module (exports chunkText for Node unit tests).
-    files: ['extension/chunk-text.js'],
+    // chunk-text.ts is an ES module (sourceType inferred from export)
+    files: ['src/chunk-text.ts'],
     languageOptions: { sourceType: 'module' },
   },
   {
-    ignores: ['dist/', 'node_modules/', '.venv/'],
+    // Test and script files (Node.js context)
+    files: ['tests/**/*.js', 'scripts/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: { ...globals.node },
+    },
+    rules: {
+      'no-console': 'off',
+    },
   },
-];
+  {
+    ignores: ['dist/', 'node_modules/', '.venv/', 'extension/**/*.js'],
+  },
+);

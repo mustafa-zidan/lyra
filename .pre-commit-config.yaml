@@ -26,14 +26,14 @@ repos:
         name: ESLint
         entry: pnpm exec eslint --fix
         language: node
-        types: [javascript]
+        types: [ts]
         pass_filenames: true
 
       - id: prettier
         name: Prettier
         entry: pnpm exec prettier --write
         language: node
-        types_or: [javascript, json, css, html]
+        types_or: [ts, json, css, html]
         pass_filenames: true
 
       # Python tests run on push only (too slow for every commit)

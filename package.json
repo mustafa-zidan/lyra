@@ -7,19 +7,25 @@
   "type": "module",
   "packageManager": "pnpm@10.0.0",
   "scripts": {
-    "lint:js": "eslint extension/",
-    "lint:js:fix": "eslint extension/ --fix",
-    "format:js": "prettier --write \"extension/**/*.{js,json,css,html}\"",
-    "format:js:check": "prettier --check \"extension/**/*.{js,json,css,html}\"",
+    "lint:js": "eslint src/",
+    "lint:js:fix": "eslint src/ --fix",
+    "format:js": "prettier --write \"src/**/*.{ts,json,css,html}\"",
+    "format:js:check": "prettier --check \"src/**/*.{ts,json,css,html}\"",
+    "build:ts": "tsc",
+    "typecheck": "tsc --noEmit",
     "build:ext": "web-ext build --source-dir extension/ --artifacts-dir dist/ --overwrite-dest",
-    "test:ext": "playwright test"
+    "test:ext": "tsc && playwright test",
+    "generate-icons": "node scripts/generate-icons.js"
   },
   "devDependencies": {
     "@eslint/js": "^9.20.0",
     "@playwright/test": "^1.50.0",
+    "@types/chrome": "^0.1.37",
     "eslint": "^9.20.0",
     "globals": "^16.0.0",
     "prettier": "^3.5.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.1",
     "web-ext": "^8.4.0"
   }
 }

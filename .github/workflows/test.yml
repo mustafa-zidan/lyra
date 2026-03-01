@@ -60,12 +60,19 @@ jobs:
       - name: Install Xvfb (for headless extension testing)
         run: sudo apt-get install -y xvfb
 
+      - name: Typecheck
+        run: pnpm run typecheck
+
       - name: Lint (ESLint)
         run: pnpm run lint:js
 
       - name: Format check (Prettier)
         run: pnpm run format:js:check
 
+      - name: Build TypeScript
+        run: pnpm run build:ts
+
       - name: Extension tests
         # Chrome extensions require a real display; xvfb-run provides one on Linux
-        run: xvfb-run --auto-servernum pnpm run test:ext
+        # build:ts is included in test:ext, but we already built above so tsc is fast
+        run: xvfb-run --auto-servernum pnpm exec playwright test

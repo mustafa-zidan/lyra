@@ -41,3 +41,10 @@ node_modules/
 Thumbs.db
 
 test-results
+
+# TypeScript compiled output
+extension/background.js
+extension/chunk-text.js
+extension/content.js
+extension/popup/popup.js
+extension/options/options.js
