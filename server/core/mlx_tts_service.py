@@ -16,10 +16,12 @@ from server.core.config import Settings
 logger = logging.getLogger(__name__)
 
 try:
+    import mlx.core as mx
     from mlx_audio.tts.utils import load_model as _mlx_load_model
 
     _MLX_AVAILABLE = True
 except ImportError:
+    mx = None  # type: ignore[assignment]
     _MLX_AVAILABLE = False
     logger.warning("mlx-audio not installed; MLX TTS backend unavailable (pip install mlx-audio)")
 
@@ -276,9 +278,65 @@ class MLXTTSService:
     def _load_model(self, model_id: str) -> Any:
         if model_id not in self._loaded:
             logger.info("Loading MLX model %s …", model_id)
-            load_kwargs = MODELS.get(model_id, {}).get("load_kwargs", {})
-            self._loaded[model_id] = _mlx_load_model(model_id, **load_kwargs)
+            if "Soprano" in model_id or "soprano" in model_id:
+                self._loaded[model_id] = self._load_soprano(model_id)
+            else:
+                load_kwargs = MODELS.get(model_id, {}).get("load_kwargs", {})
+                self._loaded[model_id] = _mlx_load_model(model_id, **load_kwargs)
         return self._loaded[model_id]
+
+    def _load_soprano(self, model_id: str) -> Any:
+        """Load a Soprano model with decoder dimensions inferred from the checkpoint.
+
+        The mlx_audio DecoderConfig hard-codes decoder_dim=512, but the
+        mlx-community/Soprano-1.1-80M-bf16 checkpoint was trained with
+        decoder_dim=768.  Loading with strict=False patches the weight arrays
+        but leaves groups=512 on the depthwise conv, causing a runtime error.
+        We detect the real decoder_dim from the embed weight shape and rebuild
+        the model with the correct config before loading weights.
+        """
+        import glob
+        import json
+        from pathlib import Path
+
+        from mlx_audio.tts.models.soprano.soprano import DecoderConfig, Model, ModelConfig
+        from mlx_audio.tts.utils import get_model_path
+
+        model_path: Path = get_model_path(model_id)
+
+        # Load all checkpoint weights.
+        weight_files = glob.glob(str(model_path / "*.safetensors"))
+        weights: dict[str, Any] = {}
+        for wf in weight_files:
+            weights.update(mx.load(wf))
+
+        # Infer decoder architecture from weight shapes.
+        embed_w = weights.get("decoder.decoder.embed.weight")
+        pw1_w = weights.get("decoder.decoder.convnext.0.pwconv1.weight")
+        num_layers = sum(
+            1 for k in weights if k.startswith("decoder.decoder.convnext.") and k.endswith(".gamma")
+        )
+        decoder_dim: int = int(embed_w.shape[0]) if embed_w is not None else 512
+        intermediate_dim: int = int(pw1_w.shape[0]) if pw1_w is not None else decoder_dim * 3
+
+        # Load and patch the model config.
+        with open(model_path / "config.json") as f:
+            config_dict = json.load(f)
+
+        base_cfg = ModelConfig.from_dict(config_dict)
+        base_cfg.decoder_config = DecoderConfig(
+            decoder_num_layers=num_layers or base_cfg.decoder_config.decoder_num_layers,
+            decoder_dim=decoder_dim,
+            decoder_intermediate_dim=intermediate_dim,
+        )
+
+        model = Model(base_cfg)
+        sanitized = model.sanitize(weights)
+        model.load_weights(list(sanitized.items()), strict=False)
+        mx.eval(model.parameters())
+        model.eval()
+        model = Model.post_load_hook(model, model_path)
+        return model
 
     def _generate_sync(
         self,
@@ -289,7 +347,13 @@ class MLXTTSService:
     ) -> tuple[bytes, float]:
         model = self._load_model(model_id)
 
-        kwargs: dict[str, Any] = {"voice": voice}
+        # OuteTTS expects None to use the bundled default speaker; passing the
+        # string "default" causes a "Speaker file not found" error.
+        effective_voice: str | None = voice
+        if ("OuteTTS" in model_id or "outetts" in model_id.lower()) and voice == "default":
+            effective_voice = None
+
+        kwargs: dict[str, Any] = {"voice": effective_voice}
         if "Kokoro" in model_id or "kokoro" in model_id:
             lang_code = _detect_lang_code(voice)
             if lang_code:
