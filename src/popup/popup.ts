@@ -95,9 +95,37 @@ async function readPage(serverUrl: string, model: string): Promise<void> {
   const [tab] = await getTabs();
   if (!tab?.id) return;
 
+    // Inject Readability.js into the page's content-script world
+    await api.scripting.executeScript({
+        target: {tabId: tab.id},
+        files: ['/vendor/Readability.js'],
+    });
+
+    // Extract readable content with fallback chain
   const [result] = await api.scripting.executeScript({
     target: { tabId: tab.id },
-    func: () => document.body.innerText,
+      func: () => {
+          const clone = document.cloneNode(true) as Document;
+          try {
+              // @ts-expect-error Readability injected as global by prior executeScript
+              const article = new Readability(clone).parse();
+              if (article?.textContent?.trim()) {
+                  return article.textContent.trim();
+              }
+          } catch {
+              /* fall through to fallback */
+          }
+
+          // Fallback: semantic HTML elements
+          for (const sel of ['article', 'main', '[role="main"]']) {
+              const el = document.querySelector(sel);
+              if (el?.textContent?.trim() && el.textContent.trim().length > 100) {
+                  return el.textContent.trim();
+              }
+          }
+          // Last resort: full page text
+          return document.body.innerText;
+      },
   });
 
   const text = (result?.result as string | undefined)?.trim();
