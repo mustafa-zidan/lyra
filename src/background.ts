@@ -12,7 +12,7 @@
 // Cross-browser API shim (Firefox uses `browser`, Chrome uses `chrome`).
 // Both are declared as globals in eslint.config.js no import needed.
 const api: typeof chrome | null =
-  typeof browser !== 'undefined' ? browser : typeof chrome !== 'undefined' ? chrome : null;
+    typeof browser !== 'undefined' ? browser : typeof chrome !== 'undefined' ? chrome : null;
 
 // ---------------------------------------------------------------------------
 // Constants / defaults
@@ -28,36 +28,36 @@ const CONTEXT_MENU_ID = 'lyra-read-selection';
 // ---------------------------------------------------------------------------
 
 interface Settings {
-  serverUrl: string;
-  defaultVoice: string;
-  selectedModel: string;
+    serverUrl: string;
+    defaultVoice: string;
+    selectedModel: string;
 }
 
 interface Voice {
-  id: string;
-  name: string;
-  default?: boolean;
+    id: string;
+    name: string;
+    default?: boolean;
 }
 
 interface ModelInfo {
-  id: string;
-  name: string;
-  description: string;
-  languages: string[];
-  default: boolean;
+    id: string;
+    name: string;
+    description: string;
+    languages: string[];
+    default: boolean;
 }
 
 interface ExtMessage {
-  action: 'speak' | 'stop' | 'get-voices' | 'get-models' | 'health';
-  text?: string;
-  voice?: string;
-  model?: string;
-  serverUrl?: string;
+    action: 'speak' | 'stop' | 'get-voices' | 'get-models' | 'health';
+    text?: string;
+    voice?: string;
+    model?: string;
+    serverUrl?: string;
 }
 
 interface HealthStatus {
-  available: boolean;
-  status: string;
+    available: boolean;
+    status: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -65,14 +65,14 @@ interface HealthStatus {
 // ---------------------------------------------------------------------------
 
 async function getSettings(): Promise<Settings> {
-  return new Promise((resolve) => {
-    api!.storage.local.get(
-      { serverUrl: DEFAULT_SERVER_URL, defaultVoice: DEFAULT_VOICE, selectedModel: DEFAULT_MODEL },
-      (items) => {
-        resolve(items as unknown as Settings);
-      },
-    );
-  });
+    return new Promise((resolve) => {
+        api!.storage.local.get(
+            {serverUrl: DEFAULT_SERVER_URL, defaultVoice: DEFAULT_VOICE, selectedModel: DEFAULT_MODEL},
+            (items) => {
+                resolve(items as unknown as Settings);
+            },
+        );
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -80,77 +80,77 @@ async function getSettings(): Promise<Settings> {
 // ---------------------------------------------------------------------------
 
 if (api) {
-  api.runtime.onInstalled.addListener(() => {
-    api!.contextMenus.create({
-      id: CONTEXT_MENU_ID,
-      title: 'Read selection aloud with Lyra',
-      contexts: ['selection'],
+    api.runtime.onInstalled.addListener(() => {
+        api!.contextMenus.create({
+            id: CONTEXT_MENU_ID,
+            title: 'Read selection aloud with Lyra',
+            contexts: ['selection'],
+        });
     });
-  });
 
-  api.contextMenus.onClicked.addListener(async (info, tab) => {
-    if (info.menuItemId !== CONTEXT_MENU_ID) return;
-    const text = info.selectionText?.trim();
-    if (!text || !tab?.id) return;
+    api.contextMenus.onClicked.addListener(async (info, tab) => {
+        if (info.menuItemId !== CONTEXT_MENU_ID) return;
+        const text = info.selectionText?.trim();
+        if (!text || !tab?.id) return;
 
-    const { serverUrl, defaultVoice, selectedModel } = await getSettings();
-    await speakInTab(tab.id, text, defaultVoice, serverUrl, selectedModel);
-  });
+        const {serverUrl, defaultVoice, selectedModel} = await getSettings();
+        await speakInTab(tab.id, text, defaultVoice, serverUrl, selectedModel);
+    });
 
-  // ---------------------------------------------------------------------------
-  // Message handling (from popup / content script)
-  // ---------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
+    // Message handling (from popup / content script)
+    // ---------------------------------------------------------------------------
 
-  api.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    handleMessage(message as ExtMessage, sender)
-      .then(sendResponse)
-      .catch((err: Error) => {
-        sendResponse({ ok: false, error: err.message });
-      });
-    return true; // keep channel open for async response
-  });
+    api.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        handleMessage(message as ExtMessage, sender)
+            .then(sendResponse)
+            .catch((err: Error) => {
+                sendResponse({ok: false, error: err.message});
+            });
+        return true; // keep channel open for async response
+    });
 }
 
 async function handleMessage(
-  message: ExtMessage,
-  sender: chrome.runtime.MessageSender,
+    message: ExtMessage,
+    sender: chrome.runtime.MessageSender,
 ): Promise<Record<string, unknown>> {
-  const { action } = message;
+    const {action} = message;
 
-  if (action === 'speak') {
-    const { text, voice, serverUrl, model } = message;
-    const tabId = sender.tab?.id ?? (await getActiveTabId());
-    if (!tabId) return { ok: false, error: 'No active tab' };
+    if (action === 'speak') {
+        const {text, voice, serverUrl, model} = message;
+        const tabId = sender.tab?.id ?? (await getActiveTabId());
+        if (!tabId) return {ok: false, error: 'No active tab'};
 
-    speakInTab(tabId, text!, voice!, serverUrl!, model ?? DEFAULT_MODEL).catch(console.error);
-    return { ok: true };
-  }
+        speakInTab(tabId, text!, voice!, serverUrl!, model ?? DEFAULT_MODEL).catch(console.error);
+        return {ok: true};
+    }
 
-  if (action === 'stop') {
-    const tabId = sender.tab?.id ?? (await getActiveTabId());
-    if (tabId) notifyTab(tabId, { action: 'playback-stopped' });
-    return { ok: true };
-  }
+    if (action === 'stop') {
+        const tabId = sender.tab?.id ?? (await getActiveTabId());
+        if (tabId) notifyTab(tabId, {action: 'playback-stopped'});
+        return {ok: true};
+    }
 
-  if (action === 'get-voices') {
-    const { serverUrl, model } = message;
-    const voices = await fetchVoices(serverUrl ?? DEFAULT_SERVER_URL, model);
-    return { ok: true, voices };
-  }
+    if (action === 'get-voices') {
+        const {serverUrl, model} = message;
+        const voices = await fetchVoices(serverUrl ?? DEFAULT_SERVER_URL, model);
+        return {ok: true, voices};
+    }
 
-  if (action === 'get-models') {
-    const { serverUrl } = message;
-    const models = await fetchModels(serverUrl ?? DEFAULT_SERVER_URL);
-    return { ok: true, models };
-  }
+    if (action === 'get-models') {
+        const {serverUrl} = message;
+        const models = await fetchModels(serverUrl ?? DEFAULT_SERVER_URL);
+        return {ok: true, models};
+    }
 
-  if (action === 'health') {
-    const { serverUrl } = message;
-    const status = await fetchHealth(serverUrl ?? DEFAULT_SERVER_URL);
-    return { ok: true, ...status };
-  }
+    if (action === 'health') {
+        const {serverUrl} = message;
+        const status = await fetchHealth(serverUrl ?? DEFAULT_SERVER_URL);
+        return {ok: true, ...status};
+    }
 
-  return { ok: false, error: `Unknown action: ${action}` };
+    return {ok: false, error: `Unknown action: ${action}`};
 }
 
 // ---------------------------------------------------------------------------
@@ -161,34 +161,34 @@ async function handleMessage(
  * Generate speech for each chunk of text, highlighting and playing sequentially.
  */
 async function speakInTab(
-  tabId: number,
-  text: string,
-  voice: string,
-  serverUrl: string,
-  model: string,
+    tabId: number,
+    text: string,
+    voice: string,
+    serverUrl: string,
+    model: string,
 ): Promise<void> {
-  notifyTab(tabId, { action: 'playback-started', text });
+    notifyTab(tabId, {action: 'playback-started', text});
 
-  try {
-    const chunks = chunkText(text);
-    for (const chunk of chunks) {
-      // Signal content script to highlight this chunk before fetching audio
-      notifyTab(tabId, { action: 'chunk-highlight', text: chunk });
+    try {
+        const chunks = chunkText(text);
+        for (const chunk of chunks) {
+            // Signal content script to highlight this chunk before fetching audio
+            notifyTab(tabId, {action: 'chunk-highlight', text: chunk});
 
-      const audioBase64 = await fetchTTS(chunk, voice, serverUrl, model);
-      await api!.scripting.executeScript({
-        target: { tabId },
-        func: playAudioInPage,
-        args: [audioBase64],
-      });
+            const audioBase64 = await fetchTTS(chunk, voice, serverUrl, model);
+            await api!.scripting.executeScript({
+                target: {tabId},
+                func: playAudioInPage,
+                args: [audioBase64],
+            });
+        }
+        // Clear highlight after all chunks finish
+        notifyTab(tabId, {action: 'chunk-highlight', text: null});
+        notifyTab(tabId, {action: 'playback-finished'});
+    } catch (err) {
+        notifyTab(tabId, {action: 'chunk-highlight', text: null});
+        notifyTab(tabId, {action: 'playback-error', error: (err as Error).message});
     }
-    // Clear highlight after all chunks finish
-    notifyTab(tabId, { action: 'chunk-highlight', text: null });
-    notifyTab(tabId, { action: 'playback-finished' });
-  } catch (err) {
-    notifyTab(tabId, { action: 'chunk-highlight', text: null });
-    notifyTab(tabId, { action: 'playback-error', error: (err as Error).message });
-  }
 }
 
 /**
@@ -199,66 +199,66 @@ async function speakInTab(
  * media-src CSP restrictions.
  */
 async function fetchTTS(
-  text: string,
-  voice: string,
-  serverUrl: string,
-  model: string,
+    text: string,
+    voice: string,
+    serverUrl: string,
+    model: string,
 ): Promise<string> {
-  const url = `${serverUrl}/tts/generate`;
-  const body: Record<string, string> = { text, voice: voice || DEFAULT_VOICE };
-  if (model) body.model = model;
+    const url = `${serverUrl}/tts/generate`;
+    const body: Record<string, string> = {text, voice: voice || DEFAULT_VOICE};
+    if (model) body.model = model;
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body),
+    });
 
-  if (!response.ok) {
-    const json = await response.json().catch(() => ({})) as { detail?: string };
-    throw new Error(json.detail ?? `Server error ${response.status}`);
-  }
+    if (!response.ok) {
+        const json = await response.json().catch(() => ({})) as { detail?: string };
+        throw new Error(json.detail ?? `Server error ${response.status}`);
+    }
 
-  const arrayBuffer = await response.arrayBuffer();
-  const bytes = new Uint8Array(arrayBuffer);
-  let binary = '';
-  for (const b of bytes) binary += String.fromCharCode(b);
-  return btoa(binary); // raw base64, no data: prefix
+    const arrayBuffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = '';
+    for (const b of bytes) binary += String.fromCharCode(b);
+    return btoa(binary); // raw base64, no data: prefix
 }
 
 /**
  * Fetch the list of available voices from the server for a given model.
  */
 async function fetchVoices(serverUrl: string, model?: string): Promise<Voice[]> {
-  const url = new URL(`${serverUrl}/voices`);
-  if (model) url.searchParams.set('model', model);
-  const response = await fetch(url.toString());
-  if (!response.ok) throw new Error(`Voices request failed: ${response.status}`);
-  const data = await response.json() as { voices?: Voice[] };
-  return data.voices ?? [];
+    const url = new URL(`${serverUrl}/voices`);
+    if (model) url.searchParams.set('model', model);
+    const response = await fetch(url.toString());
+    if (!response.ok) throw new Error(`Voices request failed: ${response.status}`);
+    const data = await response.json() as { voices?: Voice[] };
+    return data.voices ?? [];
 }
 
 /**
  * Fetch the list of available models from the server.
  */
 async function fetchModels(serverUrl: string): Promise<ModelInfo[]> {
-  const response = await fetch(`${serverUrl}/models`);
-  if (!response.ok) throw new Error(`Models request failed: ${response.status}`);
-  const data = await response.json() as { models?: ModelInfo[] };
-  return data.models ?? [];
+    const response = await fetch(`${serverUrl}/models`);
+    if (!response.ok) throw new Error(`Models request failed: ${response.status}`);
+    const data = await response.json() as { models?: ModelInfo[] };
+    return data.models ?? [];
 }
 
 /**
  * Fetch server health status.
  */
 async function fetchHealth(serverUrl: string): Promise<HealthStatus> {
-  try {
-    const response = await fetch(`${serverUrl}/health`);
-    const data = await response.json() as { tts_available: boolean; status: string };
-    return { available: data.tts_available, status: data.status };
-  } catch {
-    return { available: false, status: 'unreachable' };
-  }
+    try {
+        const response = await fetch(`${serverUrl}/health`);
+        const data = await response.json() as { tts_available: boolean; status: string };
+        return {available: data.tts_available, status: data.status};
+    } catch {
+        return {available: false, status: 'unreachable'};
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -269,19 +269,19 @@ async function fetchHealth(serverUrl: string): Promise<HealthStatus> {
  * Split text at sentence boundaries into chunks of at most `maxLen` characters.
  */
 function chunkText(text: string, maxLen = 500): string[] {
-  const sentences = text.match(/[^.!?]+[.!?]*/g) ?? [text];
-  const chunks: string[] = [];
-  let current = '';
+    const sentences = text.match(/[^.!?]+[.!?]*/g) ?? [text];
+    const chunks: string[] = [];
+    let current = '';
 
-  for (const sentence of sentences) {
-    if (current.length + sentence.length > maxLen && current.length > 0) {
-      chunks.push(current.trim());
-      current = '';
+    for (const sentence of sentences) {
+        if (current.length + sentence.length > maxLen && current.length > 0) {
+            chunks.push(current.trim());
+            current = '';
+        }
+        current += sentence;
     }
-    current += sentence;
-  }
-  if (current.trim()) chunks.push(current.trim());
-  return chunks.length > 0 ? chunks : [text];
+    if (current.trim()) chunks.push(current.trim());
+    return chunks.length > 0 ? chunks : [text];
 }
 
 // ---------------------------------------------------------------------------
@@ -289,17 +289,17 @@ function chunkText(text: string, maxLen = 500): string[] {
 // ---------------------------------------------------------------------------
 
 function notifyTab(tabId: number, payload: Record<string, unknown>): void {
-  api!.tabs.sendMessage(tabId, payload).catch(() => {
-    // Tab may not have content script — safe to ignore
-  });
+    api!.tabs.sendMessage(tabId, payload).catch(() => {
+        // Tab may not have content script — safe to ignore
+    });
 }
 
 async function getActiveTabId(): Promise<number | null> {
-  return new Promise((resolve) => {
-    api!.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      resolve(tabs[0]?.id ?? null);
+    return new Promise((resolve) => {
+        api!.tabs.query({active: true, currentWindow: true}, (tabs) => {
+            resolve(tabs[0]?.id ?? null);
+        });
     });
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -315,26 +315,26 @@ async function getActiveTabId(): Promise<number | null> {
  * `new Audio(dataUrl)` deliberately sidesteps the page's media-src CSP: the
  * directive only governs URL-based media resources, not in-memory ArrayBuffers.
  */
-function playAudioInPage(base64Wav: string): Promise<void> {
-  return new Promise((resolve, reject) => {
+async function playAudioInPage(base64Wav: string): Promise<void> {
     // Decode base64 → ArrayBuffer without constructing any URL
     const binary = atob(base64Wav);
     const buf = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) buf[i] = binary.charCodeAt(i);
 
     const ctx = new AudioContext();
-    ctx.decodeAudioData(
-      buf.buffer,
-      (decoded) => {
-        const source = ctx.createBufferSource();
-        source.buffer = decoded;
-        source.connect(ctx.destination);
-        source.onended = () => { ctx.close(); resolve(); };
+    if (ctx.state === 'suspended') await ctx.resume();
+
+    const decoded = await ctx.decodeAudioData(buf.buffer);
+    const source = ctx.createBufferSource();
+    source.buffer = decoded;
+    source.connect(ctx.destination);
+    await new Promise<void>((resolve) => {
+        source.onended = () => {
+            ctx.close();
+            resolve();
+        };
         source.start(0);
-      },
-      (err) => reject(new Error(`Audio decode error: ${err}`)),
-    );
-  });
+    });
 }
 
 export {};
