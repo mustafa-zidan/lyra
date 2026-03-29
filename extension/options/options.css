@@ -192,3 +192,30 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+/* Test status */
+.test-status {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: 2px;
+  font-size: 13px;
+  border: 1px solid transparent;
+}
+
+.test-status--playing {
+  background: #f0f8ff;
+  color: #0066cc;
+  border-color: #b3d9ff;
+}
+
+.test-status--success {
+  background: #f0fff4;
+  color: #008844;
+  border-color: #b3e6cc;
+}
+
+.test-status--error {
+  background: #fff5f5;
+  color: #cc0000;
+  border-color: #ffb3b3;
+}

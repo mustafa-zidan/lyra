@@ -18,8 +18,10 @@ const defaultVoiceSelect = document.getElementById('default-voice') as HTMLSelec
 const btnCheck = document.getElementById('btn-check') as HTMLButtonElement;
 const btnSave = document.getElementById('btn-save') as HTMLButtonElement;
 const btnReset = document.getElementById('btn-reset') as HTMLButtonElement;
+const btnTestSound = document.getElementById('btn-test-sound') as HTMLButtonElement;
 const serverStatus = document.getElementById('server-status') as HTMLElement;
 const saveMsg = document.getElementById('save-msg') as HTMLElement;
+const testStatus = document.getElementById('test-status') as HTMLElement;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -194,6 +196,75 @@ async function getSettings(): Promise<Settings> {
 }
 
 // ---------------------------------------------------------------------------
+// Test Sound
+// ---------------------------------------------------------------------------
+
+async function testSound(): Promise<void> {
+  const serverUrl = serverUrlInput.value.trim() || DEFAULT_SERVER_URL;
+  const voice = defaultVoiceSelect.value || DEFAULT_VOICE;
+  const model = modelSelect.value || DEFAULT_MODEL;
+
+  // Test message
+  const testText = "Hello! This is a test of the text-to-speech system.";
+
+  // Show status
+  testStatus.style.display = 'block';
+  testStatus.textContent = 'Playing test sound...';
+  testStatus.className = 'test-status test-status--playing';
+
+  try {
+    // Fetch TTS audio directly from the server
+    const url = `${serverUrl}/tts/generate`;
+    const body: Record<string, string> = {
+      text: testText,
+      voice: voice || DEFAULT_VOICE
+    };
+    if (model) body.model = model;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const json = await response.json().catch(() => ({})) as { detail?: string };
+      throw new Error(json.detail ?? `Server error ${response.status}`);
+    }
+
+    // Get the audio data as blob
+    const audioBlob = await response.blob();
+    const audioUrl = URL.createObjectURL(audioBlob);
+
+    // Play the audio using HTML5 Audio
+    const audio = new Audio(audioUrl);
+
+    audio.onended = () => {
+      URL.revokeObjectURL(audioUrl);
+      testStatus.textContent = 'Test sound played successfully!';
+      testStatus.className = 'test-status test-status--success';
+      setTimeout(() => {
+        testStatus.style.display = 'none';
+      }, 3000);
+    };
+
+    audio.onerror = () => {
+      URL.revokeObjectURL(audioUrl);
+      throw new Error('Failed to play audio');
+    };
+
+    await audio.play();
+
+  } catch (err) {
+    testStatus.textContent = `Error: ${(err as Error).message}`;
+    testStatus.className = 'test-status test-status--error';
+    setTimeout(() => {
+      testStatus.style.display = 'none';
+    }, 5000);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Save / Reset
 // ---------------------------------------------------------------------------
 
@@ -226,6 +297,7 @@ function resetSettings(): void {
 btnCheck.addEventListener('click', checkServer);
 btnSave.addEventListener('click', saveSettings);
 btnReset.addEventListener('click', resetSettings);
+btnTestSound.addEventListener('click', testSound);
 
 // When model changes, refresh voice list
 modelSelect.addEventListener('change', async () => {
