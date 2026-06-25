@@ -38,6 +38,10 @@ class VoiceInfo(BaseModel):
 
     id: str = Field(..., description="Voice identifier used in API requests.")
     name: str = Field(..., description="Human-readable voice name.")
+    language: str | None = Field(
+        default=None, description="Human-readable language/accent (e.g. 'English (US)')."
+    )
+    gender: str | None = Field(default=None, description="Voice gender ('Female' or 'Male').")
     default: bool = Field(default=False, description="Whether this is the server default voice.")
 
 

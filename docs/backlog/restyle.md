@@ -1,6 +1,7 @@
 # Backlog: Restyle the Extension
 
 ## Goal
+
 Visual refresh of the popup, options page, and in-page status bar.
 Keep the indigo brand palette; improve polish without restructuring the HTML.
 
@@ -9,6 +10,7 @@ Keep the indigo brand palette; improve polish without restructuring the HTML.
 ## Popup (`extension/popup/popup.css` + minor `popup.html` tweak)
 
 ### Changes
+
 - Width: 280px → **300px**
 - Header: solid `#4f46e5` → **gradient** `linear-gradient(135deg, #4338ca 0%, #6366f1 100%)`
   plus `box-shadow: inset 0 -1px 0 rgba(0,0,0,0.15)` for depth
@@ -30,6 +32,7 @@ Keep the indigo brand palette; improve polish without restructuring the HTML.
 ## Options page (`extension/options/options.css`)
 
 ### Changes
+
 - Body background: `#f9fafb` → **`#f5f3ff`** (very faint violet, matches popup)
 - Page header `h1` color: flat `#4f46e5` → **gradient text**
   (`background: linear-gradient(90deg, #4f46e5, #818cf8); -webkit-background-clip: text;

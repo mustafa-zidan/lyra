@@ -76,6 +76,15 @@ body {
   gap: 6px;
 }
 
+.field-row {
+    display: flex;
+    gap: 16px;
+}
+
+.field-row .field {
+    flex: 1;
+}
+
 .field__label {
   font-weight: 600;
   display: flex;

@@ -7,10 +7,17 @@ const api = typeof browser !== 'undefined' ? browser : chrome;
 // ---------------------------------------------------------------------------
 const statusBadge = document.getElementById('status-badge');
 const voiceSelect = document.getElementById('voice-select');
+const languageFilter = document.getElementById('language-filter');
+const genderFilter = document.getElementById('gender-filter');
 const btnSelection = document.getElementById('btn-read-selection');
 const btnPage = document.getElementById('btn-read-page');
 const btnStop = document.getElementById('btn-stop');
 const optionsLink = document.getElementById('options-link');
+// Full voice list for the active model; the visible voice dropdown is a
+// language/gender-filtered view of this.
+let allVoices = [];
+/** Voice we'd like to keep selected across filter changes (saved default first). */
+let preferredVoice = '';
 // ---------------------------------------------------------------------------
 // Initialisation
 // ---------------------------------------------------------------------------
@@ -22,18 +29,21 @@ async function init() {
     // Load voices for the selected model
     try {
         const { voices } = await sendBackground({ action: 'get-voices', serverUrl, model: selectedModel });
-        populateVoices(voices ?? [], defaultVoice);
+        setVoices(voices ?? [], defaultVoice);
         btnSelection.disabled = false;
         btnPage.disabled = false;
     }
     catch {
-        populateVoices([], defaultVoice);
+        setVoices([], defaultVoice);
     }
     // Options link
     optionsLink.addEventListener('click', (e) => {
         e.preventDefault();
         api.runtime.openOptionsPage();
     });
+    // Re-filter the voice list when language/gender preselectors change
+    languageFilter.addEventListener('change', applyVoiceFilter);
+    genderFilter.addEventListener('change', applyVoiceFilter);
     // Button handlers
     btnSelection.addEventListener('click', () => readSelection(serverUrl, selectedModel));
     btnPage.addEventListener('click', () => readPage(serverUrl, selectedModel));
@@ -62,7 +72,7 @@ async function readPage(serverUrl, model) {
         return;
     // Inject Readability.js into the page's content-script world
     await api.scripting.executeScript({
-        target: {tabId: tab.id},
+        target: { tabId: tab.id },
         files: ['/vendor/Readability.js'],
     });
     // Extract readable content with fallback chain
@@ -76,7 +86,8 @@ async function readPage(serverUrl, model) {
                 if (article?.textContent?.trim()) {
                     return article.textContent.trim();
                 }
-            } catch {
+            }
+            catch {
                 /* fall through to fallback */
             }
             // Fallback: semantic HTML elements
@@ -113,23 +124,55 @@ function updateStatusBadge(available) {
         statusBadge.className = 'badge badge--error';
     }
 }
-function populateVoices(voices, defaultVoice) {
+/**
+ * Store the full voice list, populate the language/gender preselectors from
+ * the available metadata, and render the (filtered) voice dropdown.
+ */
+function setVoices(voices, defaultVoice) {
+    allVoices = voices;
+    preferredVoice = defaultVoice;
+    populateFilterOptions(languageFilter, voices.map((v) => v.language));
+    populateFilterOptions(genderFilter, voices.map((v) => v.gender));
+    applyVoiceFilter();
+}
+/** Fill a filter <select> with the distinct, non-empty values (plus "All"). */
+function populateFilterOptions(select, values) {
+    const distinct = [...new Set(values.filter((v) => !!v))].sort();
+    select.innerHTML = '<option value="">All</option>';
+    // Hide the filter entirely when there's nothing to narrow by (≤1 option).
+    const wrapper = select.closest('.filter');
+    if (wrapper)
+        wrapper.style.display = distinct.length > 1 ? '' : 'none';
+    for (const value of distinct) {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = value;
+        select.appendChild(opt);
+    }
+}
+/** Render the voice dropdown filtered by the current language/gender selection. */
+function applyVoiceFilter() {
+    const lang = languageFilter.value;
+    const gender = genderFilter.value;
+    const previous = voiceSelect.value || preferredVoice;
+    const filtered = allVoices.filter((v) => (!lang || v.language === lang) && (!gender || v.gender === gender));
     voiceSelect.innerHTML = '';
-    if (voices.length === 0) {
+    if (filtered.length === 0) {
         const opt = document.createElement('option');
         opt.value = '';
-        opt.textContent = 'Default';
+        opt.textContent = allVoices.length === 0 ? 'Default' : 'No matching voices';
         voiceSelect.appendChild(opt);
         return;
     }
-    for (const v of voices) {
+    for (const v of filtered) {
         const opt = document.createElement('option');
         opt.value = v.id;
         opt.textContent = v.name;
-        if (v.id === defaultVoice || v.default)
-            opt.selected = true;
         voiceSelect.appendChild(opt);
     }
+    // Keep the prior/preferred selection if it survived the filter; else first.
+    const keep = filtered.find((v) => v.id === previous) ?? filtered.find((v) => v.default);
+    voiceSelect.value = keep ? keep.id : filtered[0].id;
 }
 function setPlaying(playing) {
     btnSelection.style.display = playing ? 'none' : '';
@@ -141,7 +184,11 @@ function setPlaying(playing) {
 // ---------------------------------------------------------------------------
 async function getSettings() {
     return new Promise((resolve) => {
-        api.storage.local.get({ serverUrl: 'http://127.0.0.1:8000', defaultVoice: 'af_heart', selectedModel: 'mlx-community/Kokoro-82M-bf16' }, (items) => {
+        api.storage.local.get({
+            serverUrl: 'http://127.0.0.1:8000',
+            defaultVoice: 'af_heart',
+            selectedModel: 'mlx-community/Kokoro-82M-bf16'
+        }, (items) => {
             resolve(items);
         });
     });

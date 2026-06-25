@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Tests for POST /tts/generate."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from eurydice.types import AudioFormat, AudioResult, Voice
 from fastapi.testclient import TestClient
@@ -46,11 +46,9 @@ def test_generate_text_too_long(client: TestClient) -> None:
 
 def test_generate_service_unavailable(app, mock_tts_service: MagicMock) -> None:
     mock_tts_service.is_available = False
+    app.state.tts = mock_tts_service
 
-    with (
-        patch("server.main.TTSService", return_value=mock_tts_service),
-        TestClient(app, raise_server_exceptions=True) as c,
-    ):
+    with TestClient(app, raise_server_exceptions=True) as c:
         response = c.post("/tts/generate", json={"text": "Hello!"})
 
     assert response.status_code == 503

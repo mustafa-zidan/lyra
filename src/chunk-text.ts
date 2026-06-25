@@ -6,17 +6,17 @@
  * background.ts remains a plain script for cross-browser compatibility.
  */
 export function chunkText(text: string, maxLen = 500): string[] {
-  const sentences = text.match(/[^.!?]+[.!?]*/g) ?? [text];
-  const chunks: string[] = [];
-  let current = '';
+    const sentences = text.match(/[^.!?]+[.!?]*/g) ?? [text];
+    const chunks: string[] = [];
+    let current = '';
 
-  for (const sentence of sentences) {
-    if (current.length + sentence.length > maxLen && current.length > 0) {
-      chunks.push(current.trim());
-      current = '';
+    for (const sentence of sentences) {
+        if (current.length + sentence.length > maxLen && current.length > 0) {
+            chunks.push(current.trim());
+            current = '';
+        }
+        current += sentence;
     }
-    current += sentence;
-  }
-  if (current.trim()) chunks.push(current.trim());
-  return chunks.length > 0 ? chunks : [text];
+    if (current.trim()) chunks.push(current.trim());
+    return chunks.length > 0 ? chunks : [text];
 }

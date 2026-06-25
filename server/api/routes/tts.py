@@ -74,6 +74,9 @@ async def generate(body: TTSRequest, request: Request) -> Response:
             voice=body.voice,
             model_id=body.model,
         )
+    except ValueError as exc:
+        # Bad request data (e.g. an unknown voice) — client error, not server error.
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         logger.error("TTS generation failed: %s", exc)
         raise HTTPException(status_code=500, detail=f"TTS generation failed: {exc}") from exc

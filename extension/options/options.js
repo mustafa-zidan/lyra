@@ -11,6 +11,8 @@ const DEFAULT_MODEL = 'mlx-community/Kokoro-82M-bf16';
 const serverUrlInput = document.getElementById('server-url');
 const modelSelect = document.getElementById('model-select');
 const defaultVoiceSelect = document.getElementById('default-voice');
+const languageFilter = document.getElementById('language-filter');
+const genderFilter = document.getElementById('gender-filter');
 const btnCheck = document.getElementById('btn-check');
 const btnSave = document.getElementById('btn-save');
 const btnReset = document.getElementById('btn-reset');
@@ -18,6 +20,11 @@ const btnTestSound = document.getElementById('btn-test-sound');
 const serverStatus = document.getElementById('server-status');
 const saveMsg = document.getElementById('save-msg');
 const testStatus = document.getElementById('test-status');
+// Full voice list for the selected model; the visible voice dropdown is a
+// language/gender-filtered view of this.
+let allVoices = [];
+/** Voice to keep selected across filter changes (saved default first). */
+let preferredVoice = '';
 // ---------------------------------------------------------------------------
 // Load saved settings
 // ---------------------------------------------------------------------------
@@ -79,14 +86,14 @@ async function refreshVoices(serverUrl, modelId, selectedVoiceId) {
             model: modelId,
         });
         if (resp?.voices?.length) {
-            populateVoices(resp.voices, selectedVoiceId);
+            setVoices(resp.voices, selectedVoiceId);
         }
         else {
-            populateVoices([], selectedVoiceId);
+            setVoices([], selectedVoiceId);
         }
     }
     catch {
-        populateVoices([], selectedVoiceId);
+        setVoices([], selectedVoiceId);
     }
 }
 function populateModels(modelList, selectedId) {
@@ -110,24 +117,61 @@ function populateModels(modelList, selectedId) {
     }
     modelSelect.value = selectedId || current || DEFAULT_MODEL;
 }
-function populateVoices(voices, selectedId) {
-    const current = defaultVoiceSelect.value;
+/**
+ * Store the full voice list, populate the language/gender preselectors from
+ * the available metadata, and render the (filtered) voice dropdown.
+ */
+function setVoices(voices, selectedId) {
+    allVoices = voices;
+    preferredVoice = selectedId || defaultVoiceSelect.value || DEFAULT_VOICE;
+    populateFilterOptions(languageFilter, voices.map((v) => v.language));
+    populateFilterOptions(genderFilter, voices.map((v) => v.gender));
+    applyVoiceFilter();
+}
+/** Fill a filter <select> with the distinct, non-empty values (plus "All"). */
+function populateFilterOptions(select, values) {
+    const distinct = [...new Set(values.filter((v) => !!v))].sort();
+    const wrapper = select.closest('.field');
+    if (wrapper)
+        wrapper.style.display = distinct.length > 1 ? '' : 'none';
+    select.innerHTML = '<option value="">All</option>';
+    for (const value of distinct) {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = value;
+        select.appendChild(opt);
+    }
+}
+/** Render the default-voice dropdown filtered by the current language/gender selection. */
+function applyVoiceFilter() {
+    const lang = languageFilter.value;
+    const gender = genderFilter.value;
+    const previous = defaultVoiceSelect.value || preferredVoice;
     defaultVoiceSelect.innerHTML = '';
-    if (voices.length === 0) {
+    if (allVoices.length === 0) {
         const opt = document.createElement('option');
         opt.value = DEFAULT_VOICE;
         opt.textContent = 'Default';
         defaultVoiceSelect.appendChild(opt);
-        defaultVoiceSelect.value = selectedId || DEFAULT_VOICE;
+        defaultVoiceSelect.value = previous || DEFAULT_VOICE;
         return;
     }
-    for (const v of voices) {
+    const filtered = allVoices.filter((v) => (!lang || v.language === lang) && (!gender || v.gender === gender));
+    if (filtered.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'No matching voices';
+        defaultVoiceSelect.appendChild(opt);
+        return;
+    }
+    for (const v of filtered) {
         const opt = document.createElement('option');
         opt.value = v.id;
         opt.textContent = v.name;
         defaultVoiceSelect.appendChild(opt);
     }
-    defaultVoiceSelect.value = selectedId || current || DEFAULT_VOICE;
+    const keep = filtered.find((v) => v.id === previous) ?? filtered.find((v) => v.default);
+    defaultVoiceSelect.value = keep ? keep.id : filtered[0].id;
 }
 function setStatus(message, type) {
     serverStatus.textContent = message;
@@ -140,7 +184,6 @@ async function getSettings() {
         });
     });
 }
-
 // ---------------------------------------------------------------------------
 // Test Sound
 // ---------------------------------------------------------------------------
@@ -165,7 +208,7 @@ async function testSound() {
             body.model = model;
         const response = await fetch(url, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
         });
         if (!response.ok) {
@@ -190,7 +233,8 @@ async function testSound() {
             throw new Error('Failed to play audio');
         };
         await audio.play();
-    } catch (err) {
+    }
+    catch (err) {
         testStatus.textContent = `Error: ${err.message}`;
         testStatus.className = 'test-status test-status--error';
         setTimeout(() => {
@@ -216,7 +260,7 @@ async function saveSettings() {
 function resetSettings() {
     serverUrlInput.value = DEFAULT_SERVER_URL;
     populateModels([], DEFAULT_MODEL);
-    populateVoices([], DEFAULT_VOICE);
+    setVoices([], DEFAULT_VOICE);
     setStatus('Reset to defaults. Click Save to apply.', 'idle');
 }
 // ---------------------------------------------------------------------------
@@ -226,6 +270,9 @@ btnCheck.addEventListener('click', checkServer);
 btnSave.addEventListener('click', saveSettings);
 btnReset.addEventListener('click', resetSettings);
 btnTestSound.addEventListener('click', testSound);
+// Re-filter the default-voice list when the language/gender preselectors change
+languageFilter.addEventListener('change', applyVoiceFilter);
+genderFilter.addEventListener('change', applyVoiceFilter);
 // When model changes, refresh voice list
 modelSelect.addEventListener('change', async () => {
     const serverUrl = serverUrlInput.value.trim() || DEFAULT_SERVER_URL;

@@ -19,6 +19,17 @@ const DEFAULT_VOICE = 'af_heart';
 const DEFAULT_MODEL = 'mlx-community/Kokoro-82M-bf16';
 const CONTEXT_MENU_ID = 'lyra-read-selection';
 // ---------------------------------------------------------------------------
+// Playback cancellation state
+// ---------------------------------------------------------------------------
+/**
+ * Monotonic id for the active read. Each call to speakInTab claims the next id;
+ * a running loop bails the moment `playbackSession` moves past its own id, so
+ * pressing Stop (which bumps the id) or starting a new read cancels the old one.
+ */
+let playbackSession = 0;
+/** AbortController for the in-flight chunk fetch, so Stop can cancel mid-request. */
+let activeFetch = null;
+// ---------------------------------------------------------------------------
 // Storage helpers
 // ---------------------------------------------------------------------------
 async function getSettings() {
@@ -71,9 +82,15 @@ async function handleMessage(message, sender) {
         return { ok: true };
     }
     if (action === 'stop') {
+        // Invalidate any running read loop and abort an in-flight fetch.
+        playbackSession++;
+        activeFetch?.abort();
+        activeFetch = null;
         const tabId = sender.tab?.id ?? (await getActiveTabId());
-        if (tabId)
+        if (tabId) {
+            await stopAudioInTab(tabId); // halt audio already playing in the page
             notifyTab(tabId, { action: 'playback-stopped' });
+        }
         return { ok: true };
     }
     if (action === 'get-voices') {
@@ -100,18 +117,44 @@ async function handleMessage(message, sender) {
  * Generate speech for each chunk of text, highlighting and playing sequentially.
  */
 async function speakInTab(tabId, text, voice, serverUrl, model) {
+    // Claim this read; any older loop will see playbackSession move past its id.
+    const session = ++playbackSession;
+    activeFetch?.abort();
+    activeFetch = null;
+    await stopAudioInTab(tabId); // stop audio lingering from a previous read
     notifyTab(tabId, { action: 'playback-started', text });
     try {
         const chunks = chunkText(text);
         for (const chunk of chunks) {
+            if (session !== playbackSession)
+                return; // stopped or superseded
             // Signal content script to highlight this chunk before fetching audio
             notifyTab(tabId, { action: 'chunk-highlight', text: chunk });
-            const audioBase64 = await fetchTTS(chunk, voice, serverUrl, model);
+            const controller = new AbortController();
+            activeFetch = controller;
+            let audioBase64;
+            try {
+                audioBase64 = await fetchTTS(chunk, voice, serverUrl, model, controller.signal);
+            }
+            catch (err) {
+                // A deliberate stop aborts the fetch — swallow it, don't show an error.
+                if (controller.signal.aborted || session !== playbackSession)
+                    return;
+                throw err;
+            }
+            finally {
+                if (activeFetch === controller)
+                    activeFetch = null;
+            }
+            if (session !== playbackSession)
+                return; // stopped while fetching
             await api.scripting.executeScript({
                 target: { tabId },
                 func: playAudioInPage,
                 args: [audioBase64],
             });
+            if (session !== playbackSession)
+                return; // stopped during playback
         }
         // Clear highlight after all chunks finish
         notifyTab(tabId, { action: 'chunk-highlight', text: null });
@@ -129,7 +172,7 @@ async function speakInTab(tabId, text, voice, serverUrl, model) {
  * Audio API (decodeAudioData) which operates on an ArrayBuffer and is not subject to
  * media-src CSP restrictions.
  */
-async function fetchTTS(text, voice, serverUrl, model) {
+async function fetchTTS(text, voice, serverUrl, model, signal) {
     const url = `${serverUrl}/tts/generate`;
     const body = { text, voice: voice || DEFAULT_VOICE };
     if (model)
@@ -138,6 +181,7 @@ async function fetchTTS(text, voice, serverUrl, model) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal,
     });
     if (!response.ok) {
         const json = await response.json().catch(() => ({}));
@@ -234,21 +278,72 @@ async function getActiveTabId() {
  * `new Audio(dataUrl)` deliberately sidesteps the page's media-src CSP: the
  * directive only governs URL-based media resources, not in-memory ArrayBuffers.
  */
-function playAudioInPage(base64Wav) {
-    return new Promise((resolve, reject) => {
-        // Decode base64 → ArrayBuffer without constructing any URL
-        const binary = atob(base64Wav);
-        const buf = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++)
-            buf[i] = binary.charCodeAt(i);
-        const ctx = new AudioContext();
-        ctx.decodeAudioData(buf.buffer, (decoded) => {
-            const source = ctx.createBufferSource();
-            source.buffer = decoded;
-            source.connect(ctx.destination);
-            source.onended = () => { ctx.close(); resolve(); };
-            source.start(0);
-        }, (err) => reject(new Error(`Audio decode error: ${err}`)));
+async function playAudioInPage(base64Wav) {
+    const w = window;
+    // Decode base64 → ArrayBuffer without constructing any URL
+    const binary = atob(base64Wav);
+    const buf = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++)
+        buf[i] = binary.charCodeAt(i);
+    const ctx = new AudioContext();
+    // Publish a stop handle so stopAudioInPage() can halt this immediately.
+    const state = { ctx, source: null, stopped: false };
+    w.__lyraAudio = state;
+    if (ctx.state === 'suspended')
+        await ctx.resume();
+    const decoded = await ctx.decodeAudioData(buf.buffer);
+    // Stop may have been requested while we were resuming/decoding.
+    if (state.stopped) {
+        ctx.close();
+        return;
+    }
+    const source = ctx.createBufferSource();
+    state.source = source;
+    source.buffer = decoded;
+    source.connect(ctx.destination);
+    await new Promise((resolve) => {
+        source.onended = () => {
+            if (ctx.state !== 'closed')
+                ctx.close();
+            if (w.__lyraAudio === state)
+                w.__lyraAudio = undefined;
+            resolve();
+        };
+        source.start(0);
     });
+}
+/**
+ * Stops any audio started by playAudioInPage immediately. Injected into the page
+ * (same isolated world as playAudioInPage, so it sees the shared window handle).
+ */
+function stopAudioInPage() {
+    const w = window;
+    const state = w.__lyraAudio;
+    if (!state)
+        return;
+    state.stopped = true;
+    try {
+        state.source?.stop();
+    }
+    catch {
+        // source may not have started yet — ignore
+    }
+    try {
+        if (state.ctx.state !== 'closed')
+            state.ctx.close();
+    }
+    catch {
+        // context already closed — ignore
+    }
+    w.__lyraAudio = undefined;
+}
+/** Inject stopAudioInPage into a tab to halt any audio currently playing there. */
+async function stopAudioInTab(tabId) {
+    try {
+        await api.scripting.executeScript({ target: { tabId }, func: stopAudioInPage });
+    }
+    catch {
+        // Tab may not permit injection (e.g. chrome:// pages) — safe to ignore
+    }
 }
 export {};

@@ -67,6 +67,29 @@
         }
     }
     /**
+     * Build a mapping from normalised-string index → original-string index.
+     * Normalisation collapses runs of whitespace into a single space.
+     */
+    function buildNormalisationMap(original) {
+        const map = [];
+        let inSpace = false;
+        for (let i = 0; i < original.length; i++) {
+            const isWS = /\s/.test(original[i]);
+            if (isWS) {
+                if (!inSpace) {
+                    map.push(i); // the single normalised space maps to this position
+                    inSpace = true;
+                }
+                // skip subsequent whitespace chars (collapsed away)
+            }
+            else {
+                map.push(i);
+                inSpace = false;
+            }
+        }
+        return map;
+    }
+    /**
      * Highlight `chunkText` in the page by finding it in the text index and
      * applying a visual highlight, then scrolling it into view.
      *
@@ -83,11 +106,13 @@
         const idx = haystack.indexOf(needle);
         if (idx === -1)
             return;
-        // Map character offset back to original (non-normalised) positions.
-        // Because we normalise both strings the same way this is a best-effort
-        // approximation; good enough for sentence-length chunks.
-        const start = idx;
-        const end = idx + needle.length;
+        // Map normalised offsets back to original fullText positions.
+        // Walk fullText, tracking where each normalised character maps to.
+        const normToOrig = buildNormalisationMap(fullText);
+        const start = normToOrig[idx];
+        const end = idx + needle.length < normToOrig.length
+            ? normToOrig[idx + needle.length]
+            : fullText.length;
         const range = buildRange(start, end);
         if (!range)
             return;

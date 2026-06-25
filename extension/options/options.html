@@ -51,7 +51,28 @@
           </select>
         </div>
 
-        <div class="field">
+          <div class="field-row">
+              <div class="field">
+                  <label class="field__label" for="language-filter">
+                      Language
+                      <span class="field__hint">Narrow the voice list.</span>
+                  </label>
+                  <select class="field__input" id="language-filter">
+                      <option value="">All</option>
+                  </select>
+              </div>
+              <div class="field">
+                  <label class="field__label" for="gender-filter">
+                      Gender
+                      <span class="field__hint">Narrow the voice list.</span>
+                  </label>
+                  <select class="field__input" id="gender-filter">
+                      <option value="">All</option>
+                  </select>
+              </div>
+          </div>
+
+          <div class="field">
           <label for="default-voice" class="field__label">
             Default voice
             <span class="field__hint">
@@ -59,7 +80,7 @@
             </span>
           </label>
           <select id="default-voice" class="field__input">
-            <option value="af_heart">Heart (American ♀)</option>
+              <option value="af_heart">Heart</option>
           </select>
         </div>
 

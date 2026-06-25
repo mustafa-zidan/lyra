@@ -1,6 +1,7 @@
 # Backlog: Generate a Nicer Icon
 
 ## Goal
+
 Replace the three placeholder PNGs with a proper Lyra icon: a rounded-square
 indigo background with a white speaker + soundwave symbol. Generate all sizes
 from a single SVG source using Playwright (already a devDependency).
@@ -10,6 +11,7 @@ from a single SVG source using Playwright (already a devDependency).
 ## Icon design — `extension/icons/icon.svg`
 
 Rounded-square (rx=28) indigo background. Three elements:
+
 1. Solid speaker body (filled polygon)
 2. Near sound-wave arc
 3. Far sound-wave arc (slightly transparent for depth)
@@ -92,14 +94,14 @@ await browser.close();
 
 ## Files
 
-| Path | Action |
-|------|--------|
-| `extension/icons/icon.svg` | Create |
-| `scripts/generate-icons.js` | Create |
-| `extension/icons/icon-16.png` | Regenerate (run `pnpm run generate-icons`) |
-| `extension/icons/icon-48.png` | Regenerate |
-| `extension/icons/icon-128.png` | Regenerate |
-| `package.json` | Add `generate-icons` script |
+| Path                           | Action                                     |
+|--------------------------------|--------------------------------------------|
+| `extension/icons/icon.svg`     | Create                                     |
+| `scripts/generate-icons.js`    | Create                                     |
+| `extension/icons/icon-16.png`  | Regenerate (run `pnpm run generate-icons`) |
+| `extension/icons/icon-48.png`  | Regenerate                                 |
+| `extension/icons/icon-128.png` | Regenerate                                 |
+| `package.json`                 | Add `generate-icons` script                |
 
 ---
 

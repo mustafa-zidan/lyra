@@ -7,9 +7,9 @@ requires-python = ">=3.12"
 license = { text = "AGPL-3.0-only" }
 
 dependencies = [
-    "fastapi>=0.135.0",
-    "uvicorn[standard]>=0.41.0",
-    "pydantic-settings>=2.13.1",
+    "fastapi>=0.138.1",
+    "uvicorn[standard]>=0.49.0",
+    "pydantic-settings>=2.14.2",
     "eurydice-tts[audio]",
 ]
 
@@ -23,11 +23,11 @@ mlx = [
     "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
 ]
 dev = [
-    "pytest>=9.0.2",
-    "pytest-asyncio>=1.3.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
     "httpx>=0.28.1",
-    "ruff>=0.15.4",
-    "pre-commit>=4.5.1",
+    "ruff>=0.15.20",
+    "pre-commit>=4.6.0",
 ]
 
 [project.scripts]

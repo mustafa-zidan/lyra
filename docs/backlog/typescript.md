@@ -1,6 +1,7 @@
 # Backlog: Switch Extension to TypeScript
 
 ## Goal
+
 Add static typing to the extension source. Move `.js` files to `src/` as `.ts`,
 compile to `extension/` with `tsc`. The compiled `.js` files are gitignored; CI
 builds before running tests.
@@ -41,12 +42,14 @@ extension/                    ← static assets (unchanged) + compiled JS output
 ```
 
 New scripts:
+
 ```json
 "build:ts":   "tsc",
 "typecheck":  "tsc --noEmit"
 ```
 
 Update existing scripts:
+
 ```json
 "lint:js":          "eslint src/",
 "lint:js:fix":      "eslint src/ --fix",
@@ -78,6 +81,7 @@ Update existing scripts:
 ```
 
 Key notes:
+
 - `background.ts` has no `import`/`export` → TypeScript outputs it as a plain
   script (no module boilerplate). Firefox MV3 compat preserved.
 - `chunk-text.ts` keeps `export function chunkText` → outputs as ES module.
@@ -97,6 +101,7 @@ declare const browser: typeof chrome | undefined;
 ## Step 4 — Type annotations per file
 
 ### `src/background.ts`
+
 ```typescript
 interface Settings {
   serverUrl: string;
@@ -122,11 +127,13 @@ interface ExtMessage {
 ```
 
 ### `src/chunk-text.ts`
+
 ```typescript
 export function chunkText(text: string, maxLen = 500): string[]
 ```
 
 ### `src/content.ts`
+
 ```typescript
 interface TextEntry {
   node: Text;
@@ -139,6 +146,7 @@ interface TextEntry {
 ```
 
 ### `src/popup/popup.ts` and `src/options/options.ts`
+
 - DOM refs typed with `as HTMLElement`, `as HTMLSelectElement`, `as HTMLInputElement`
 - Async helpers get explicit return types
 
@@ -212,6 +220,7 @@ In the extension job, before the Playwright test step add:
 ## Step 8 — Pre-commit update (`.pre-commit-config.yaml`)
 
 Update the local ESLint and Prettier hooks to target `src/`:
+
 ```yaml
 - id: eslint
   entry: pnpm exec eslint --fix
