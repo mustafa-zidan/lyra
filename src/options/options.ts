@@ -67,7 +67,7 @@ async function loadSettings(): Promise<void> {
 
     // Try to populate models and voices from the server
     try {
-        const modelsResp = await api.runtime.sendMessage({action: 'get-models', serverUrl}) as
+        const modelsResp = (await api.runtime.sendMessage({action: 'get-models', serverUrl})) as
             | { models?: ModelInfo[] }
             | undefined;
         if (modelsResp?.models?.length) {
@@ -95,7 +95,7 @@ async function checkServer(): Promise<void> {
 
     setStatus('Checking…', 'idle');
     try {
-        const healthResp = await api.runtime.sendMessage({action: 'health', serverUrl: url}) as
+        const healthResp = (await api.runtime.sendMessage({action: 'health', serverUrl: url})) as
             | { available?: boolean; status?: string }
             | undefined;
 
@@ -107,7 +107,7 @@ async function checkServer(): Promise<void> {
         setStatus(`Connected ✓  (provider: ${healthResp.status ?? 'ok'})`, 'ok');
 
         // Refresh models
-        const modelsResp = await api.runtime.sendMessage({action: 'get-models', serverUrl: url}) as
+        const modelsResp = (await api.runtime.sendMessage({action: 'get-models', serverUrl: url})) as
             | { models?: ModelInfo[] }
             | undefined;
         if (modelsResp?.models?.length) {
@@ -125,13 +125,17 @@ async function checkServer(): Promise<void> {
 // Helpers
 // ---------------------------------------------------------------------------
 
-async function refreshVoices(serverUrl: string, modelId: string, selectedVoiceId: string): Promise<void> {
+async function refreshVoices(
+    serverUrl: string,
+    modelId: string,
+    selectedVoiceId: string,
+): Promise<void> {
     try {
-        const resp = await api.runtime.sendMessage({
+        const resp = (await api.runtime.sendMessage({
             action: 'get-voices',
             serverUrl,
             model: modelId,
-        }) as { voices?: Voice[] } | undefined;
+        })) as { voices?: Voice[] } | undefined;
 
         if (resp?.voices?.length) {
             setVoices(resp.voices, selectedVoiceId);
@@ -174,13 +178,22 @@ function populateModels(modelList: ModelInfo[], selectedId: string): void {
 function setVoices(voices: Voice[], selectedId: string): void {
     allVoices = voices;
     preferredVoice = selectedId || defaultVoiceSelect.value || DEFAULT_VOICE;
-    populateFilterOptions(languageFilter, voices.map((v) => v.language));
-    populateFilterOptions(genderFilter, voices.map((v) => v.gender));
+    populateFilterOptions(
+        languageFilter,
+        voices.map((v) => v.language),
+    );
+    populateFilterOptions(
+        genderFilter,
+        voices.map((v) => v.gender),
+    );
     applyVoiceFilter();
 }
 
 /** Fill a filter <select> with the distinct, non-empty values (plus "All"). */
-function populateFilterOptions(select: HTMLSelectElement, values: (string | null | undefined)[]): void {
+function populateFilterOptions(
+    select: HTMLSelectElement,
+    values: (string | null | undefined)[],
+): void {
     const distinct = [...new Set(values.filter((v): v is string => !!v))].sort();
     const wrapper = select.closest('.field') as HTMLElement | null;
     if (wrapper) wrapper.style.display = distinct.length > 1 ? '' : 'none';
@@ -259,7 +272,7 @@ async function testSound(): Promise<void> {
     const model = modelSelect.value || DEFAULT_MODEL;
 
     // Test message
-    const testText = "Hello! This is a test of the text-to-speech system.";
+    const testText = 'Hello! This is a test of the text-to-speech system.';
 
     // Show status
     testStatus.style.display = 'block';
@@ -271,7 +284,7 @@ async function testSound(): Promise<void> {
         const url = `${serverUrl}/tts/generate`;
         const body: Record<string, string> = {
             text: testText,
-            voice: voice || DEFAULT_VOICE
+            voice: voice || DEFAULT_VOICE,
         };
         if (model) body.model = model;
 
@@ -282,7 +295,7 @@ async function testSound(): Promise<void> {
         });
 
         if (!response.ok) {
-            const json = await response.json().catch(() => ({})) as { detail?: string };
+            const json = (await response.json().catch(() => ({}))) as { detail?: string };
             throw new Error(json.detail ?? `Server error ${response.status}`);
         }
 
@@ -308,7 +321,6 @@ async function testSound(): Promise<void> {
         };
 
         await audio.play();
-
     } catch (err) {
         testStatus.textContent = `Error: ${(err as Error).message}`;
         testStatus.className = 'test-status test-status--error';

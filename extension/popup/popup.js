@@ -28,7 +28,11 @@ async function init() {
     updateStatusBadge(health.available ?? false);
     // Load voices for the selected model
     try {
-        const { voices } = await sendBackground({ action: 'get-voices', serverUrl, model: selectedModel });
+        const {voices} = await sendBackground({
+            action: 'get-voices',
+            serverUrl,
+            model: selectedModel,
+        });
         setVoices(voices ?? [], defaultVoice);
         btnSelection.disabled = false;
         btnPage.disabled = false;
@@ -56,7 +60,7 @@ async function readSelection(serverUrl, model) {
     const [tab] = await getTabs();
     if (!tab?.id)
         return;
-    const response = await api.tabs.sendMessage(tab.id, { action: 'get-selection' });
+    const response = (await api.tabs.sendMessage(tab.id, {action: 'get-selection'}));
     const text = response?.text?.trim();
     if (!text) {
         statusBadge.textContent = 'No text selected';
@@ -187,7 +191,7 @@ async function getSettings() {
         api.storage.local.get({
             serverUrl: 'http://127.0.0.1:8000',
             defaultVoice: 'af_heart',
-            selectedModel: 'mlx-community/Kokoro-82M-bf16'
+            selectedModel: 'mlx-community/Kokoro-82M-bf16',
         }, (items) => {
             resolve(items);
         });

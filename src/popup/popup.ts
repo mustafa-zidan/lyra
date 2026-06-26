@@ -61,7 +61,11 @@ async function init(): Promise<void> {
 
     // Load voices for the selected model
     try {
-        const {voices} = await sendBackground({action: 'get-voices', serverUrl, model: selectedModel});
+        const {voices} = await sendBackground({
+            action: 'get-voices',
+            serverUrl,
+            model: selectedModel,
+        });
         setVoices(voices ?? [], defaultVoice);
         btnSelection.disabled = false;
         btnPage.disabled = false;
@@ -93,7 +97,9 @@ async function readSelection(serverUrl: string, model: string): Promise<void> {
     const [tab] = await getTabs();
     if (!tab?.id) return;
 
-    const response = await api.tabs.sendMessage(tab.id, {action: 'get-selection'}) as { text?: string } | undefined;
+    const response = (await api.tabs.sendMessage(tab.id, {action: 'get-selection'})) as
+        | { text?: string }
+        | undefined;
     const text = response?.text?.trim();
     if (!text) {
         statusBadge.textContent = 'No text selected';
@@ -175,13 +181,22 @@ function updateStatusBadge(available: boolean): void {
 function setVoices(voices: Voice[], defaultVoice: string): void {
     allVoices = voices;
     preferredVoice = defaultVoice;
-    populateFilterOptions(languageFilter, voices.map((v) => v.language));
-    populateFilterOptions(genderFilter, voices.map((v) => v.gender));
+    populateFilterOptions(
+        languageFilter,
+        voices.map((v) => v.language),
+    );
+    populateFilterOptions(
+        genderFilter,
+        voices.map((v) => v.gender),
+    );
     applyVoiceFilter();
 }
 
 /** Fill a filter <select> with the distinct, non-empty values (plus "All"). */
-function populateFilterOptions(select: HTMLSelectElement, values: (string | null | undefined)[]): void {
+function populateFilterOptions(
+    select: HTMLSelectElement,
+    values: (string | null | undefined)[],
+): void {
     const distinct = [...new Set(values.filter((v): v is string => !!v))].sort();
     select.innerHTML = '<option value="">All</option>';
     // Hide the filter entirely when there's nothing to narrow by (≤1 option).
@@ -242,7 +257,7 @@ async function getSettings(): Promise<Settings> {
             {
                 serverUrl: 'http://127.0.0.1:8000',
                 defaultVoice: 'af_heart',
-                selectedModel: 'mlx-community/Kokoro-82M-bf16'
+                selectedModel: 'mlx-community/Kokoro-82M-bf16',
             },
             (items) => {
                 resolve(items as unknown as Settings);

@@ -1,3 +1,18 @@
+:root {
+    --bg: #ffffff;
+    --surface: #f7f7fb;
+    --text: #1b1b2a;
+    --muted: #8a8aa0;
+    --border: #e7e7ef;
+    --accent: #6d5ef0;
+    --accent-hover: #5b4bd8;
+    --accent-soft: #f1effe;
+    --danger: #e5484d;
+    --radius: 14px;
+    --radius-sm: 9px;
+    --shadow: 0 6px 24px rgba(27, 27, 42, 0.07);
+}
+
 *,
 *::before,
 *::after {
@@ -10,17 +25,19 @@ body {
   font-family:
     system-ui,
     -apple-system,
+    'Segoe UI',
     sans-serif;
   font-size: 15px;
-  color: #111;
-  background: #f5f5f5;
-  padding: 0 0 40px;
+    color: var(--text);
+    background: var(--surface);
+    padding: 0 0 48px;
+    -webkit-font-smoothing: antialiased;
 }
 
 .container {
-  max-width: 560px;
+    max-width: 580px;
   margin: 0 auto;
-  padding: 24px 20px;
+    padding: 32px 20px;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -32,48 +49,45 @@ body {
   align-items: center;
   gap: 14px;
   padding-bottom: 4px;
-  border-bottom: 2px solid #111;
-  padding-bottom: 16px;
 }
 
 .logo {
   width: 40px;
   height: 40px;
-  border-radius: 4px;
+    border-radius: 10px;
 }
 
 .page-header h1 {
-  font-size: 20px;
-  font-weight: 700;
-  color: #111;
+    font-size: 21px;
+    font-weight: 650;
   letter-spacing: -0.02em;
 }
 
 /* Cards */
 .card {
-  background: #fff;
-  border: 2px solid #111;
-  border-radius: 2px;
-  padding: 20px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+    gap: 18px;
+    box-shadow: var(--shadow);
 }
 
 .card h2 {
-  font-size: 11px;
+    font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #555;
-  margin-bottom: -4px;
+    letter-spacing: 0.06em;
+    color: var(--muted);
 }
 
-/* Field */
+/* Fields */
 .field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+    gap: 7px;
 }
 
 .field-row {
@@ -83,107 +97,134 @@ body {
 
 .field-row .field {
     flex: 1;
+    min-width: 0;
 }
 
 .field__label {
   font-weight: 600;
+    font-size: 14px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+    gap: 3px;
 }
 
 .field__hint {
-  font-size: 12px;
+    font-size: 12.5px;
   font-weight: 400;
-  color: #777;
+    color: var(--muted);
 }
 
 .field__input {
-  padding: 9px 12px;
-  border: 2px solid #ccc;
-  border-radius: 2px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
   font-size: 14px;
-  color: #111;
-  background: #fff;
-  transition: border-color 0.15s;
+    font-family: inherit;
+    color: var(--text);
+    background: var(--bg);
+    transition: border-color 0.12s,
+    box-shadow 0.12s;
+}
+
+select.field__input {
+    padding-right: 34px;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2.5 4.5L6 8l3.5-3.5' fill='none' stroke='%238a8aa0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    appearance: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+}
+
+.field__input:hover {
+    border-color: #cfcfe0;
 }
 
 .field__input:focus {
   outline: none;
-  border-color: #111;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 /* Server status */
 .server-status {
-  padding: 8px 12px;
-  border-radius: 2px;
+    padding: 10px 13px;
+    border-radius: var(--radius-sm);
   font-size: 13px;
-  border: 1px solid transparent;
+    font-weight: 500;
 }
 
 .server-status--idle {
-  background: #f5f5f5;
-  color: #555;
-  border-color: #ddd;
+    background: var(--surface);
+    color: var(--muted);
 }
 
 .server-status--ok {
-  background: #111;
-  color: #fff;
+    background: #eafaf2;
+    color: #1d9d6b;
 }
 
 .server-status--error {
-  background: #fff;
-  color: #111;
-  border-color: #111;
+    background: #fff4f4;
+    color: var(--danger);
 }
 
 /* Buttons */
 .btn {
-  padding: 9px 18px;
-  border: 2px solid #111;
-  border-radius: 2px;
+    padding: 10px 18px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
   font-size: 14px;
   font-weight: 600;
+    font-family: inherit;
   cursor: pointer;
-  transition: background 0.1s, color 0.1s;
-  letter-spacing: 0.01em;
+    transition: background 0.12s,
+    border-color 0.12s,
+    color 0.12s,
+    transform 0.04s;
 }
 
-.btn:hover {
-  background: #111;
-  color: #fff;
+.btn:active {
+    transform: translateY(1px);
 }
 
 .btn--primary {
-  background: #111;
+    background: var(--accent);
   color: #fff;
 }
 
 .btn--primary:hover {
-  background: #333;
+    background: var(--accent-hover);
 }
 
 .btn--secondary {
-  background: #fff;
-  color: #111;
+    background: var(--bg);
+    color: var(--text);
+    border-color: var(--border);
+}
+
+.btn--secondary:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-soft);
 }
 
 .btn--ghost {
   background: transparent;
-  color: #555;
-  border-color: #ccc;
+    color: var(--muted);
+    border-color: var(--border);
 }
 
 .btn--ghost:hover {
-  background: #f5f5f5;
-  color: #111;
-  border-color: #111;
+    color: var(--text);
+    border-color: #cfcfe0;
 }
 
 .btn--sm {
-  padding: 6px 14px;
+    padding: 8px 14px;
   font-size: 13px;
+    align-self: flex-start;
 }
 
 /* Actions row */
@@ -196,35 +237,29 @@ body {
 .save-msg {
   font-size: 13px;
   font-weight: 600;
-  min-height: 20px;
-  color: #111;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+    min-height: 18px;
+    color: var(--accent);
 }
 
 /* Test status */
 .test-status {
-  margin-top: 8px;
-  padding: 8px 12px;
-  border-radius: 2px;
+    padding: 10px 13px;
+    border-radius: var(--radius-sm);
   font-size: 13px;
-  border: 1px solid transparent;
+    font-weight: 500;
 }
 
 .test-status--playing {
-  background: #f0f8ff;
-  color: #0066cc;
-  border-color: #b3d9ff;
+    background: var(--accent-soft);
+    color: var(--accent);
 }
 
 .test-status--success {
-  background: #f0fff4;
-  color: #008844;
-  border-color: #b3e6cc;
+    background: #eafaf2;
+    color: #1d9d6b;
 }
 
 .test-status--error {
-  background: #fff5f5;
-  color: #cc0000;
-  border-color: #ffb3b3;
+    background: #fff4f4;
+    color: var(--danger);
 }

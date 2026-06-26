@@ -33,7 +33,7 @@ async function loadSettings() {
     serverUrlInput.value = serverUrl;
     // Try to populate models and voices from the server
     try {
-        const modelsResp = await api.runtime.sendMessage({ action: 'get-models', serverUrl });
+        const modelsResp = (await api.runtime.sendMessage({action: 'get-models', serverUrl}));
         if (modelsResp?.models?.length) {
             populateModels(modelsResp.models, selectedModel);
         }
@@ -57,14 +57,14 @@ async function checkServer() {
     }
     setStatus('Checking…', 'idle');
     try {
-        const healthResp = await api.runtime.sendMessage({ action: 'health', serverUrl: url });
+        const healthResp = (await api.runtime.sendMessage({action: 'health', serverUrl: url}));
         if (!healthResp?.available) {
             setStatus('Server reachable but TTS backend offline.', 'error');
             return;
         }
         setStatus(`Connected ✓  (provider: ${healthResp.status ?? 'ok'})`, 'ok');
         // Refresh models
-        const modelsResp = await api.runtime.sendMessage({ action: 'get-models', serverUrl: url });
+        const modelsResp = (await api.runtime.sendMessage({action: 'get-models', serverUrl: url}));
         if (modelsResp?.models?.length) {
             populateModels(modelsResp.models, modelSelect.value);
         }
@@ -80,11 +80,11 @@ async function checkServer() {
 // ---------------------------------------------------------------------------
 async function refreshVoices(serverUrl, modelId, selectedVoiceId) {
     try {
-        const resp = await api.runtime.sendMessage({
+        const resp = (await api.runtime.sendMessage({
             action: 'get-voices',
             serverUrl,
             model: modelId,
-        });
+        }));
         if (resp?.voices?.length) {
             setVoices(resp.voices, selectedVoiceId);
         }
@@ -192,7 +192,7 @@ async function testSound() {
     const voice = defaultVoiceSelect.value || DEFAULT_VOICE;
     const model = modelSelect.value || DEFAULT_MODEL;
     // Test message
-    const testText = "Hello! This is a test of the text-to-speech system.";
+    const testText = 'Hello! This is a test of the text-to-speech system.';
     // Show status
     testStatus.style.display = 'block';
     testStatus.textContent = 'Playing test sound...';
@@ -202,7 +202,7 @@ async function testSound() {
         const url = `${serverUrl}/tts/generate`;
         const body = {
             text: testText,
-            voice: voice || DEFAULT_VOICE
+            voice: voice || DEFAULT_VOICE,
         };
         if (model)
             body.model = model;
@@ -212,7 +212,7 @@ async function testSound() {
             body: JSON.stringify(body),
         });
         if (!response.ok) {
-            const json = await response.json().catch(() => ({}));
+            const json = (await response.json().catch(() => ({})));
             throw new Error(json.detail ?? `Server error ${response.status}`);
         }
         // Get the audio data as blob

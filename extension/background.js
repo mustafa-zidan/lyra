@@ -74,11 +74,19 @@ if (api) {
 async function handleMessage(message, sender) {
     const { action } = message;
     if (action === 'speak') {
-        const { text, voice, serverUrl, model } = message;
         const tabId = sender.tab?.id ?? (await getActiveTabId());
         if (!tabId)
             return { ok: false, error: 'No active tab' };
-        speakInTab(tabId, text, voice, serverUrl, model ?? DEFAULT_MODEL).catch(console.error);
+        const text = message.text?.trim();
+        if (!text)
+            return {ok: false, error: 'No text provided'};
+        // The in-page selection button only sends `text`; fall back to the saved
+        // settings for anything the caller (e.g. the popup) didn't specify.
+        const settings = await getSettings();
+        const voice = message.voice ?? settings.defaultVoice;
+        const serverUrl = message.serverUrl ?? settings.serverUrl;
+        const model = message.model ?? settings.selectedModel;
+        speakInTab(tabId, text, voice, serverUrl, model).catch(console.error);
         return { ok: true };
     }
     if (action === 'stop') {
@@ -148,11 +156,7 @@ async function speakInTab(tabId, text, voice, serverUrl, model) {
             }
             if (session !== playbackSession)
                 return; // stopped while fetching
-            await api.scripting.executeScript({
-                target: { tabId },
-                func: playAudioInPage,
-                args: [audioBase64],
-            });
+            await playAudioInTab(tabId, audioBase64);
             if (session !== playbackSession)
                 return; // stopped during playback
         }
@@ -184,7 +188,7 @@ async function fetchTTS(text, voice, serverUrl, model, signal) {
         signal,
     });
     if (!response.ok) {
-        const json = await response.json().catch(() => ({}));
+        const json = (await response.json().catch(() => ({})));
         throw new Error(json.detail ?? `Server error ${response.status}`);
     }
     const arrayBuffer = await response.arrayBuffer();
@@ -204,7 +208,7 @@ async function fetchVoices(serverUrl, model) {
     const response = await fetch(url.toString());
     if (!response.ok)
         throw new Error(`Voices request failed: ${response.status}`);
-    const data = await response.json();
+    const data = (await response.json());
     return data.voices ?? [];
 }
 /**
@@ -214,7 +218,7 @@ async function fetchModels(serverUrl) {
     const response = await fetch(`${serverUrl}/models`);
     if (!response.ok)
         throw new Error(`Models request failed: ${response.status}`);
-    const data = await response.json();
+    const data = (await response.json());
     return data.models ?? [];
 }
 /**
@@ -223,7 +227,7 @@ async function fetchModels(serverUrl) {
 async function fetchHealth(serverUrl) {
     try {
         const response = await fetch(`${serverUrl}/health`);
-        const data = await response.json();
+        const data = (await response.json());
         return { available: data.tts_available, status: data.status };
     }
     catch {
@@ -267,83 +271,32 @@ async function getActiveTabId() {
     });
 }
 // ---------------------------------------------------------------------------
-// Injected function — runs inside the page context
+// Audio playback (delegated to the content script)
 // ---------------------------------------------------------------------------
 /**
- * Decodes a raw base64 WAV string and plays it via the Web Audio API.
+ * Hand a chunk of base64-encoded WAV audio to the content script and wait until
+ * it finishes playing.
  *
- * Injected into the page via scripting.executeScript — must be self-contained.
+ * Playback happens inside the already-injected content script (via the Web
+ * Audio API) rather than through scripting.executeScript. The content script
+ * matches every http/https page, so this works without host permissions or an
+ * activeTab grant — which matters because the in-page selection button is not a
+ * gesture that grants activeTab the way clicking the toolbar action is.
  *
- * Using Web Audio API (decodeAudioData on an ArrayBuffer) instead of
- * `new Audio(dataUrl)` deliberately sidesteps the page's media-src CSP: the
- * directive only governs URL-based media resources, not in-memory ArrayBuffers.
+ * decodeAudioData on an ArrayBuffer also sidesteps the page's media-src CSP, the
+ * same reason fetchTTS returns raw base64 rather than a data: URL.
  */
-async function playAudioInPage(base64Wav) {
-    const w = window;
-    // Decode base64 → ArrayBuffer without constructing any URL
-    const binary = atob(base64Wav);
-    const buf = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++)
-        buf[i] = binary.charCodeAt(i);
-    const ctx = new AudioContext();
-    // Publish a stop handle so stopAudioInPage() can halt this immediately.
-    const state = { ctx, source: null, stopped: false };
-    w.__lyraAudio = state;
-    if (ctx.state === 'suspended')
-        await ctx.resume();
-    const decoded = await ctx.decodeAudioData(buf.buffer);
-    // Stop may have been requested while we were resuming/decoding.
-    if (state.stopped) {
-        ctx.close();
-        return;
-    }
-    const source = ctx.createBufferSource();
-    state.source = source;
-    source.buffer = decoded;
-    source.connect(ctx.destination);
-    await new Promise((resolve) => {
-        source.onended = () => {
-            if (ctx.state !== 'closed')
-                ctx.close();
-            if (w.__lyraAudio === state)
-                w.__lyraAudio = undefined;
-            resolve();
-        };
-        source.start(0);
-    });
-}
-/**
- * Stops any audio started by playAudioInPage immediately. Injected into the page
- * (same isolated world as playAudioInPage, so it sees the shared window handle).
- */
-function stopAudioInPage() {
-    const w = window;
-    const state = w.__lyraAudio;
-    if (!state)
-        return;
-    state.stopped = true;
+async function playAudioInTab(tabId, audioBase64) {
     try {
-        state.source?.stop();
+        await api.tabs.sendMessage(tabId, {action: 'play-audio', audio: audioBase64});
     }
     catch {
-        // source may not have started yet — ignore
+        // Tab closed or no content script present — safe to ignore.
     }
-    try {
-        if (state.ctx.state !== 'closed')
-            state.ctx.close();
-    }
-    catch {
-        // context already closed — ignore
-    }
-    w.__lyraAudio = undefined;
 }
-/** Inject stopAudioInPage into a tab to halt any audio currently playing there. */
+
+/** Tell the content script to halt any audio currently playing in the tab. */
 async function stopAudioInTab(tabId) {
-    try {
-        await api.scripting.executeScript({ target: { tabId }, func: stopAudioInPage });
-    }
-    catch {
-        // Tab may not permit injection (e.g. chrome:// pages) — safe to ignore
-    }
+    notifyTab(tabId, {action: 'stop-audio'});
 }
 export {};

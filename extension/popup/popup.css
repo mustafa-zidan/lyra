@@ -1,3 +1,20 @@
+:root {
+    --bg: #ffffff;
+    --surface: #f7f7fb;
+    --text: #1b1b2a;
+    --muted: #8a8aa0;
+    --border: #e7e7ef;
+    --accent: #6d5ef0;
+    --accent-hover: #5b4bd8;
+    --accent-soft: #f1effe;
+    --danger: #e5484d;
+    --danger-soft: #fff4f4;
+    --danger-border: #f4cccd;
+    --radius: 12px;
+    --radius-sm: 9px;
+    --shadow: 0 6px 20px rgba(27, 27, 42, 0.1);
+}
+
 *,
 *::before,
 *::after {
@@ -7,183 +24,220 @@
 }
 
 body {
-  width: 300px;
+    width: 320px;
   font-family:
     system-ui,
     -apple-system,
+    'Segoe UI',
     sans-serif;
   font-size: 14px;
-  color: #111;
-  background: #fff;
+    color: var(--text);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
 }
 
 /* Header */
 .header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 16px 10px;
-  background: #111;
-  color: #fff;
-  border-bottom: 2px solid #000;
+    gap: 11px;
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--border);
 }
 
 .logo {
-  width: 32px;
-  height: 32px;
-  border-radius: 4px;
-  filter: brightness(0) invert(1);
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+}
+
+.header-text {
+    display: flex;
+    align-items: center;
+  gap: 10px;
+    flex: 1;
 }
 
 .header-text h1 {
   font-size: 17px;
-  font-weight: 700;
-  line-height: 1.2;
+    font-weight: 650;
   letter-spacing: -0.01em;
 }
 
+/* Status badge with leading dot (dot drawn via ::before so textContent stays clean) */
 .badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 2px;
-  font-size: 11px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    padding: 4px 10px 4px 9px;
+    border-radius: 999px;
+    background: var(--surface);
+    font-size: 11.5px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+.badge::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    flex: none;
 }
 
 .badge--ok {
-  background: #111;
-  color: #fff;
-  outline: 1px solid rgba(255, 255, 255, 0.4);
-  outline-offset: -1px;
+    color: #1d9d6b;
+    background: #eafaf2;
 }
 
 .badge--error {
-  background: #fff;
-  color: #111;
-  outline: 1px solid rgba(255, 255, 255, 0.4);
-  outline-offset: -1px;
+    color: var(--danger);
+    background: var(--danger-soft);
 }
 
 .badge--checking {
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
+    color: var(--muted);
+    background: var(--surface);
 }
 
-/* Voice selector */
+/* Controls */
 .controls {
-  padding: 12px 16px 8px;
+    padding: 16px 18px 10px;
   display: flex;
     flex-direction: column;
-    gap: 8px;
-  border-bottom: 1px solid #e5e5e5;
+    gap: 12px;
 }
 
 .filter-row {
     display: flex;
-    gap: 10px;
+    gap: 12px;
 }
 
 .filter {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 5px;
     flex: 1;
+    min-width: 0;
 }
 
 .label {
   font-size: 12px;
   font-weight: 600;
-  color: #555;
-  white-space: nowrap;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+    color: var(--muted);
 }
 
 .select {
-  flex: 1;
-  padding: 5px 8px;
-  border: 1px solid #111;
-  border-radius: 2px;
-  font-size: 13px;
-  background: #fff;
-  color: #111;
+    width: 100%;
+    padding: 9px 30px 9px 11px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 13.5px;
+    font-family: inherit;
+    color: var(--text);
+    background: var(--bg);
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2.5 4.5L6 8l3.5-3.5' fill='none' stroke='%238a8aa0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    appearance: none;
+    -webkit-appearance: none;
   cursor: pointer;
+    transition: border-color 0.12s,
+    box-shadow 0.12s;
 }
 
-/* Action buttons */
+.select:hover {
+    border-color: #cfcfe0;
+}
+
+.select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Actions */
 .actions {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px 16px;
+    gap: 9px;
+    padding: 8px 18px 16px;
 }
 
 .btn {
   width: 100%;
-  padding: 9px 14px;
-  border: 2px solid #111;
-  border-radius: 2px;
-  font-size: 13px;
+    padding: 11px 16px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
   font-weight: 600;
+    font-family: inherit;
   cursor: pointer;
-  transition: background 0.1s, color 0.1s;
-  letter-spacing: 0.01em;
+    transition: background 0.12s,
+    border-color 0.12s,
+    color 0.12s,
+    transform 0.04s;
+}
+
+.btn:active:not(:disabled) {
+    transform: translateY(1px);
 }
 
 .btn:disabled {
-  opacity: 0.35;
+    opacity: 0.5;
   cursor: not-allowed;
 }
 
-.btn:not(:disabled):hover {
-  background: #111;
-  color: #fff;
-}
-
-.btn:not(:disabled):active {
-  opacity: 0.8;
-}
-
 .btn--primary {
-  background: #111;
+    background: var(--accent);
   color: #fff;
 }
 
 .btn--primary:not(:disabled):hover {
-  background: #333;
-  color: #fff;
+    background: var(--accent-hover);
 }
 
 .btn--secondary {
-  background: #fff;
-  color: #111;
+    background: var(--bg);
+    color: var(--text);
+    border-color: var(--border);
+}
+
+.btn--secondary:not(:disabled):hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-soft);
 }
 
 .btn--danger {
-  background: #fff;
-  color: #111;
-  border-color: #111;
+    background: var(--danger-soft);
+    color: var(--danger);
+    border-color: var(--danger-border);
+}
+
+.btn--danger:not(:disabled):hover {
+    background: var(--danger);
+    color: #fff;
+    border-color: var(--danger);
 }
 
 /* Footer */
 .footer {
-  padding: 8px 16px;
-  border-top: 1px solid #e5e5e5;
+    padding: 12px 18px 16px;
+    border-top: 1px solid var(--border);
   text-align: center;
 }
 
 .link {
-  font-size: 12px;
-  font-weight: 500;
-  color: #555;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--muted);
   text-decoration: none;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .link:hover {
-  color: #111;
-  text-decoration: underline;
+    color: var(--accent);
 }

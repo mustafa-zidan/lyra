@@ -42,13 +42,12 @@
         style.id = '__lyra-hl-style';
         style.textContent = `
       ::highlight(lyra-reading) {
-        background-color: #000;
-        color: #fff;
+        background-color: rgba(109, 94, 240, 0.22);
       }
       .lyra-reading-mark {
-        background-color: #000;
-        color: #fff;
-        border-radius: 0;
+        background-color: rgba(109, 94, 240, 0.22);
+        color: inherit;
+        border-radius: 3px;
       }
     `;
         document.head.appendChild(style);
@@ -64,9 +63,15 @@
 
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
             acceptNode(node) {
+                const parent = (node as Text).parentElement;
                 // Skip script/style/noscript content
-                const tag = (node as Text).parentElement?.tagName?.toUpperCase() ?? '';
+                const tag = parent?.tagName?.toUpperCase() ?? '';
                 if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA'].includes(tag)) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                // Skip Lyra's own injected UI (status bar, selection button) so their
+                // labels can't corrupt highlight text matching.
+                if (parent?.closest('[id^="__lyra"]')) {
                     return NodeFilter.FILTER_REJECT;
                 }
                 return NodeFilter.FILTER_ACCEPT;
@@ -127,9 +132,8 @@
         // Walk fullText, tracking where each normalised character maps to.
         const normToOrig = buildNormalisationMap(fullText);
         const start = normToOrig[idx];
-        const end = idx + needle.length < normToOrig.length
-            ? normToOrig[idx + needle.length]
-            : fullText.length;
+        const end =
+            idx + needle.length < normToOrig.length ? normToOrig[idx + needle.length] : fullText.length;
 
         const range = buildRange(start, end);
         if (!range) return;
@@ -227,45 +231,57 @@
             right: '20px',
             left: 'auto',
             zIndex: '2147483647',
-            maxWidth: '320px',
-            background: '#111',
-            color: '#fff',
-            fontFamily: 'system-ui, sans-serif',
+            maxWidth: '340px',
+            background: '#ffffff',
+            color: '#1b1b2a',
+            fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
             fontSize: '13px',
             fontWeight: '500',
-            padding: '8px 14px',
+            padding: '10px 12px 10px 15px',
             display: 'flex',
             alignItems: 'center',
-            gap: '10px',
-            borderRadius: '2px',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+            gap: '11px',
+            border: '1px solid #e7e7ef',
+            borderRadius: '12px',
+            boxShadow: '0 6px 22px rgba(27,27,42,0.16)',
             transition: 'opacity 0.2s ease, transform 0.2s ease',
             opacity: '0',
-            transform: 'translateY(8px)',
+            transform: 'translateY(100%)',
         });
 
         const icon = document.createElement('span');
-        icon.textContent = '🔊';
-        icon.style.fontSize = '18px';
+        Object.assign(icon.style, {
+            width: '9px',
+            height: '9px',
+            borderRadius: '50%',
+            background: '#6d5ef0',
+            boxShadow: '0 0 0 4px rgba(109,94,240,0.18)',
+            flex: 'none',
+        });
 
         const label = document.createElement('span');
         label.id = '__lyra-label';
         label.textContent = 'Preparing…';
-        label.style.flex = '1';
+        Object.assign(label.style, {
+            flex: '1',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+        });
 
         const stopBtn = document.createElement('button');
         stopBtn.textContent = 'Stop';
         Object.assign(stopBtn.style, {
-            background: 'transparent',
-            border: '1px solid rgba(255,255,255,0.5)',
-            color: '#fff',
-            borderRadius: '2px',
-            padding: '4px 12px',
+            background: '#fff4f4',
+            border: '1px solid #f4cccd',
+            color: '#e5484d',
+            borderRadius: '7px',
+            padding: '5px 13px',
             cursor: 'pointer',
             fontSize: '12px',
             fontWeight: '600',
-            textTransform: 'uppercase',
-            letterSpacing: '0.04em',
+            fontFamily: 'inherit',
+            flex: 'none',
         });
         stopBtn.addEventListener('click', () => {
             hideStatusBar();
@@ -289,7 +305,7 @@
     function hideStatusBar(): void {
         if (statusBar) {
             statusBar.style.opacity = '0';
-            statusBar.style.transform = 'translateY(8px)';
+            statusBar.style.transform = 'translateY(100%)';
         }
     }
 
@@ -301,7 +317,214 @@
 
     injectHighlightStyle();
 
-    api.runtime.onMessage.addListener((message) => {
+    // ---------------------------------------------------------------------------
+    // Audio playback (Web Audio API, runs here in the content script)
+    // ---------------------------------------------------------------------------
+
+    interface AudioState {
+        ctx: AudioContext;
+        source: AudioBufferSourceNode | null;
+        stopped: boolean;
+    }
+
+    let currentAudio: AudioState | null = null;
+
+    /**
+     * Decode a raw base64 WAV string and play it, resolving when playback ends
+     * (or is stopped). decodeAudioData on an ArrayBuffer is not subject to the
+     * page's media-src CSP, unlike a `new Audio(dataUrl)`.
+     */
+    async function playAudio(base64Wav: string): Promise<void> {
+        stopAudio(); // halt anything still playing
+
+        const binary = atob(base64Wav);
+        const buf = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) buf[i] = binary.charCodeAt(i);
+
+        const ctx = new AudioContext();
+        const state: AudioState = {ctx, source: null, stopped: false};
+        currentAudio = state;
+
+        if (ctx.state === 'suspended') await ctx.resume();
+
+        let decoded: AudioBuffer;
+        try {
+            decoded = await ctx.decodeAudioData(buf.buffer);
+        } catch {
+            if (ctx.state !== 'closed') ctx.close();
+            if (currentAudio === state) currentAudio = null;
+            return;
+        }
+
+        // Stop may have been requested while we were resuming/decoding.
+        if (state.stopped) {
+            if (ctx.state !== 'closed') ctx.close();
+            return;
+        }
+
+        const source = ctx.createBufferSource();
+        state.source = source;
+        source.buffer = decoded;
+        source.connect(ctx.destination);
+
+        await new Promise<void>((resolve) => {
+            source.onended = () => {
+                if (ctx.state !== 'closed') ctx.close();
+                if (currentAudio === state) currentAudio = null;
+                resolve();
+            };
+            source.start(0);
+        });
+    }
+
+    /** Immediately stop any audio started by playAudio. */
+    function stopAudio(): void {
+        const state = currentAudio;
+        if (!state) return;
+        state.stopped = true;
+        try {
+            state.source?.stop();
+        } catch {
+            // source may not have started yet — ignore
+        }
+        try {
+            if (state.ctx.state !== 'closed') state.ctx.close();
+        } catch {
+            // context already closed — ignore
+        }
+        currentAudio = null;
+    }
+
+    // ---------------------------------------------------------------------------
+    // Floating "Listen" button shown next to a text selection (DeepL-style)
+    // ---------------------------------------------------------------------------
+
+    let selectionButton: HTMLButtonElement | null = null;
+    let isMouseDown = false;
+
+    function getOrCreateSelectionButton(): HTMLButtonElement {
+        if (selectionButton) return selectionButton;
+
+        const btn = document.createElement('button');
+        btn.id = '__lyra-selection-btn';
+        btn.type = 'button';
+        btn.setAttribute('aria-label', 'Read selection aloud with Lyra');
+        Object.assign(btn.style, {
+            position: 'fixed',
+            zIndex: '2147483647',
+            display: 'none',
+            alignItems: 'center',
+            gap: '6px',
+            background: '#6d5ef0',
+            color: '#ffffff',
+            border: 'none',
+            borderRadius: '8px',
+            padding: '6px 11px',
+            fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+            fontSize: '12px',
+            fontWeight: '600',
+            lineHeight: '1',
+            cursor: 'pointer',
+            boxShadow: '0 4px 14px rgba(27,27,42,0.28)',
+        });
+        btn.innerHTML =
+            '<span aria-hidden="true" style="font-size:13px;line-height:1">🔊</span><span>Listen</span>';
+
+        // Pressing the button must not collapse the current selection, and our own
+        // mouse events must not bubble to the document (which would hide it).
+        btn.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        });
+        btn.addEventListener('mouseup', (e) => e.stopPropagation());
+        btn.addEventListener('click', onSelectionButtonClick);
+
+        document.body.appendChild(btn);
+        selectionButton = btn;
+        return btn;
+    }
+
+    function showSelectionButton(): void {
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+            hideSelectionButton();
+            return;
+        }
+        const text = sel.toString().trim();
+        if (!text) {
+            hideSelectionButton();
+            return;
+        }
+        const rect = sel.getRangeAt(0).getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) {
+            hideSelectionButton();
+            return;
+        }
+
+        const btn = getOrCreateSelectionButton();
+        btn.style.display = 'inline-flex';
+
+        // Position just below the end of the selection, clamped to the viewport.
+        const bw = btn.offsetWidth;
+        const bh = btn.offsetHeight;
+        let left = rect.left;
+        let top = rect.bottom + 8;
+        if (top + bh > window.innerHeight - 4) {
+            top = rect.top - bh - 8; // no room below → place above
+        }
+        top = Math.max(4, top);
+        left = Math.max(4, Math.min(left, window.innerWidth - bw - 4));
+        btn.style.left = `${left}px`;
+        btn.style.top = `${top}px`;
+    }
+
+    function hideSelectionButton(): void {
+        if (selectionButton) selectionButton.style.display = 'none';
+    }
+
+    async function onSelectionButtonClick(e: MouseEvent): Promise<void> {
+        e.preventDefault();
+        e.stopPropagation();
+        const text = window.getSelection()?.toString()?.trim();
+        hideSelectionButton();
+        if (!text) return;
+        try {
+            await api.runtime.sendMessage({action: 'speak', text});
+        } catch {
+            // Background unavailable — ignore.
+        }
+    }
+
+    // Show the button after a mouse-drag selection; hide it when a new
+    // interaction starts or the selection is cleared.
+    document.addEventListener('mousedown', () => {
+        isMouseDown = true;
+        hideSelectionButton();
+    });
+    document.addEventListener('mouseup', () => {
+        isMouseDown = false;
+        // Defer so the selection is finalised before we read it.
+        setTimeout(showSelectionButton, 0);
+    });
+    document.addEventListener('selectionchange', () => {
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+            hideSelectionButton();
+        } else if (!isMouseDown) {
+            // Keyboard-driven selection (Shift+Arrows, Ctrl+A …).
+            showSelectionButton();
+        }
+    });
+    document.addEventListener('scroll', hideSelectionButton, true);
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') hideSelectionButton();
+    });
+
+    // ---------------------------------------------------------------------------
+    // Message listener
+    // ---------------------------------------------------------------------------
+
+    api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         switch ((message as { action: string }).action) {
             case 'playback-started':
                 buildTextIndex();
@@ -316,6 +539,19 @@
                 }
                 break;
 
+            case 'play-audio':
+                // Resolve the background's tabs.sendMessage when the chunk finishes,
+                // so it can sequence the next chunk. `return true` keeps the channel
+                // open for the async sendResponse (required by Chrome).
+                playAudio((message as { audio: string }).audio)
+                    .then(() => sendResponse({done: true}))
+                    .catch(() => sendResponse({done: false}));
+                return true;
+
+            case 'stop-audio':
+                stopAudio();
+                break;
+
             case 'playback-finished':
                 clearHighlight();
                 showStatusBar('Done.');
@@ -323,11 +559,13 @@
                 break;
 
             case 'playback-stopped':
+                stopAudio();
                 clearHighlight();
                 hideStatusBar();
                 break;
 
             case 'playback-error':
+                stopAudio();
                 clearHighlight();
                 showStatusBar(`Error: ${(message as { error: string }).error}`);
                 setTimeout(hideStatusBar, 4000);

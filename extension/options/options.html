@@ -10,7 +10,7 @@
     <main class="container">
       <header class="page-header">
         <img src="../icons/icon-48.png" alt="" class="logo" />
-        <h1>Lyra TTS Settings</h1>
+          <h1>Lyra Settings</h1>
       </header>
 
       <section class="card">
@@ -19,7 +19,7 @@
         <div class="field">
           <label for="server-url" class="field__label">
             Server URL
-            <span class="field__hint">The address of your running Lyra web server.</span>
+              <span class="field__hint">The address of your running Lyra TTS server.</span>
           </label>
           <input
             id="server-url"
@@ -30,24 +30,22 @@
         </div>
 
         <div id="server-status" class="server-status server-status--idle">
-          Enter a URL and click Check to verify connectivity.
+            Enter a URL and click Check connection to verify.
         </div>
 
         <button id="btn-check" class="btn btn--secondary btn--sm">Check connection</button>
       </section>
 
       <section class="card">
-        <h2>Defaults</h2>
+          <h2>Voice &amp; model</h2>
 
         <div class="field">
           <label for="model-select" class="field__label">
             Model
-            <span class="field__hint">
-              TTS model to use. Changing the model updates the voice list.
-            </span>
+              <span class="field__hint">Changing the model refreshes the voice list.</span>
           </label>
           <select id="model-select" class="field__input">
-            <option value="mlx-community/Kokoro-82M-bf16">Kokoro 82M (default)</option>
+              <option value="mlx-community/Kokoro-82M-bf16">Kokoro 82M</option>
           </select>
         </div>
 
@@ -55,7 +53,7 @@
               <div class="field">
                   <label class="field__label" for="language-filter">
                       Language
-                      <span class="field__hint">Narrow the voice list.</span>
+                      <span class="field__hint">Narrow the voices.</span>
                   </label>
                   <select class="field__input" id="language-filter">
                       <option value="">All</option>
@@ -64,7 +62,7 @@
               <div class="field">
                   <label class="field__label" for="gender-filter">
                       Gender
-                      <span class="field__hint">Narrow the voice list.</span>
+                      <span class="field__hint">Narrow the voices.</span>
                   </label>
                   <select class="field__input" id="gender-filter">
                       <option value="">All</option>
@@ -75,17 +73,15 @@
           <div class="field">
           <label for="default-voice" class="field__label">
             Default voice
-            <span class="field__hint">
-              Used when no voice is selected in the popup.
-            </span>
+              <span class="field__hint">Used when no voice is picked in the popup.</span>
           </label>
           <select id="default-voice" class="field__input">
               <option value="af_heart">Heart</option>
           </select>
         </div>
 
-        <button class="btn btn--secondary btn--sm" id="btn-test-sound">Test sound</button>
-        <div class="test-status" id="test-status" style="display: none;"></div>
+          <button class="btn btn--secondary btn--sm" id="btn-test-sound">Play a test sound</button>
+          <div class="test-status" id="test-status" style="display: none"></div>
       </section>
 
       <div class="actions">
