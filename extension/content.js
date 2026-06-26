@@ -282,7 +282,6 @@
     const api = typeof browser !== 'undefined' ? browser : chrome;
     injectHighlightStyle();
     let currentAudio = null;
-
     /**
      * Decode a raw base64 WAV string and play it, resolving when playback ends
      * (or is stopped). decodeAudioData on an ArrayBuffer is not subject to the
@@ -330,7 +329,6 @@
             source.start(0);
         });
     }
-
     /** Immediately stop any audio started by playAudio. */
     function stopAudio() {
         const state = currentAudio;
@@ -350,13 +348,11 @@
         }
         currentAudio = null;
     }
-
     // ---------------------------------------------------------------------------
     // Floating "Listen" button shown next to a text selection (DeepL-style)
     // ---------------------------------------------------------------------------
     let selectionButton = null;
     let isMouseDown = false;
-
     function getOrCreateSelectionButton() {
         if (selectionButton)
             return selectionButton;
@@ -396,7 +392,6 @@
         selectionButton = btn;
         return btn;
     }
-
     function showSelectionButton() {
         const sel = window.getSelection();
         if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
@@ -415,25 +410,26 @@
         }
         const btn = getOrCreateSelectionButton();
         btn.style.display = 'inline-flex';
-        // Position just below the end of the selection, clamped to the viewport.
+        // Position just above the start of the selection. DeepL (and most
+        // translate/dictionary tools) render their own toolbar *below* the
+        // selection, so going above avoids overlapping/hiding under them.
+        // Flip below only when there isn't room above. Clamp to the viewport.
         const bw = btn.offsetWidth;
         const bh = btn.offsetHeight;
         let left = rect.left;
-        let top = rect.bottom + 8;
-        if (top + bh > window.innerHeight - 4) {
-            top = rect.top - bh - 8; // no room below → place above
+        let top = rect.top - bh - 8;
+        if (top < 4) {
+            top = rect.bottom + 8; // no room above → place below
         }
-        top = Math.max(4, top);
+        top = Math.min(top, window.innerHeight - bh - 4);
         left = Math.max(4, Math.min(left, window.innerWidth - bw - 4));
         btn.style.left = `${left}px`;
         btn.style.top = `${top}px`;
     }
-
     function hideSelectionButton() {
         if (selectionButton)
             selectionButton.style.display = 'none';
     }
-
     async function onSelectionButtonClick(e) {
         e.preventDefault();
         e.stopPropagation();
@@ -447,7 +443,6 @@
             // Background unavailable — ignore.
         }
     }
-
     // Show the button after a mouse-drag selection; hide it when a new
     // interaction starts or the selection is cleared.
     document.addEventListener('mousedown', () => {
@@ -457,6 +452,13 @@
     document.addEventListener('mouseup', () => {
         isMouseDown = false;
         // Defer so the selection is finalised before we read it.
+        setTimeout(showSelectionButton, 0);
+    });
+    // Double-click word selection is only finalised on `dblclick` (after the
+    // second mouseup), so the mouseup handler above runs too early to see it.
+    // Re-check here once the word selection has settled.
+    document.addEventListener('dblclick', () => {
+        isMouseDown = false;
         setTimeout(showSelectionButton, 0);
     });
     document.addEventListener('selectionchange', () => {

@@ -464,15 +464,18 @@
         const btn = getOrCreateSelectionButton();
         btn.style.display = 'inline-flex';
 
-        // Position just below the end of the selection, clamped to the viewport.
+        // Position just above the start of the selection. DeepL (and most
+        // translate/dictionary tools) render their own toolbar *below* the
+        // selection, so going above avoids overlapping/hiding under them.
+        // Flip below only when there isn't room above. Clamp to the viewport.
         const bw = btn.offsetWidth;
         const bh = btn.offsetHeight;
         let left = rect.left;
-        let top = rect.bottom + 8;
-        if (top + bh > window.innerHeight - 4) {
-            top = rect.top - bh - 8; // no room below → place above
+        let top = rect.top - bh - 8;
+        if (top < 4) {
+            top = rect.bottom + 8; // no room above → place below
         }
-        top = Math.max(4, top);
+        top = Math.min(top, window.innerHeight - bh - 4);
         left = Math.max(4, Math.min(left, window.innerWidth - bw - 4));
         btn.style.left = `${left}px`;
         btn.style.top = `${top}px`;
@@ -504,6 +507,13 @@
     document.addEventListener('mouseup', () => {
         isMouseDown = false;
         // Defer so the selection is finalised before we read it.
+        setTimeout(showSelectionButton, 0);
+    });
+    // Double-click word selection is only finalised on `dblclick` (after the
+    // second mouseup), so the mouseup handler above runs too early to see it.
+    // Re-check here once the word selection has settled.
+    document.addEventListener('dblclick', () => {
+        isMouseDown = false;
         setTimeout(showSelectionButton, 0);
     });
     document.addEventListener('selectionchange', () => {

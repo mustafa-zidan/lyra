@@ -294,7 +294,6 @@ async function playAudioInTab(tabId, audioBase64) {
         // Tab closed or no content script present — safe to ignore.
     }
 }
-
 /** Tell the content script to halt any audio currently playing in the tab. */
 async function stopAudioInTab(tabId) {
     notifyTab(tabId, {action: 'stop-audio'});
