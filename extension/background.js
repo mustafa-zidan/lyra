@@ -18,6 +18,8 @@ const DEFAULT_SERVER_URL = 'http://127.0.0.1:8000';
 const DEFAULT_VOICE = 'af_heart';
 const DEFAULT_MODEL = 'mlx-community/Kokoro-82M-bf16';
 const CONTEXT_MENU_ID = 'lyra-read-selection';
+/** A chunk taking longer than this is probably loading (or downloading) a model. */
+const SLOW_REQUEST_MS = 8000;
 // ---------------------------------------------------------------------------
 // Playback cancellation state
 // ---------------------------------------------------------------------------
@@ -153,6 +155,7 @@ async function speakInTab(tabId, text, voice, serverUrl, model, language) {
     notifyTab(tabId, { action: 'playback-started', text });
     try {
         const chunks = chunkText(text);
+        let statusLabel = '';
         for (const chunk of chunks) {
             if (session !== playbackSession)
                 return; // stopped or superseded
@@ -160,9 +163,18 @@ async function speakInTab(tabId, text, voice, serverUrl, model, language) {
             notifyTab(tabId, { action: 'chunk-highlight', text: chunk });
             const controller = new AbortController();
             activeFetch = controller;
-            let audioBase64;
+            // The server gives no progress while it loads a model, and switching to one not
+            // used before downloads it (and converts it, for German), so say so when a chunk is slow.
+            const slowTimer = setTimeout(() => {
+                notifyTab(tabId, {
+                    action: 'playback-status',
+                    text: 'Loading model… the first use downloads it, which can take a while',
+                });
+                statusLabel = '';
+            }, SLOW_REQUEST_MS);
+            let result;
             try {
-                audioBase64 = await fetchTTS(chunk, voice, serverUrl, model, language, controller.signal);
+                result = await fetchTTS(chunk, voice, serverUrl, model, language, controller.signal);
             }
             catch (err) {
                 // A deliberate stop aborts the fetch — swallow it, don't show an error.
@@ -171,12 +183,18 @@ async function speakInTab(tabId, text, voice, serverUrl, model, language) {
                 throw err;
             }
             finally {
+                clearTimeout(slowTimer);
                 if (activeFetch === controller)
                     activeFetch = null;
             }
             if (session !== playbackSession)
                 return; // stopped while fetching
-            await playAudioInTab(tabId, audioBase64);
+            const label = await describeResult(result, model, serverUrl);
+            if (label !== statusLabel) {
+                statusLabel = label;
+                notifyTab(tabId, { action: 'playback-status', text: label });
+            }
+            await playAudioInTab(tabId, result.audio);
             if (session !== playbackSession)
                 return; // stopped during playback
         }
@@ -193,16 +211,42 @@ async function speakInTab(tabId, text, voice, serverUrl, model, language) {
             playbackTabId = null;
     }
 }
+/** Model display names per server URL, for naming a model the server switched to. */
+const modelNames = new Map();
+/**
+ * Status-bar label for a generated chunk: the language, plus the model when the server
+ * switched away from the requested one (e.g. "Reading aloud · German · Kokoro 82M German (Victoria)").
+ */
+async function describeResult(result, requestedModel, serverUrl) {
+    const parts = ['Reading aloud'];
+    if (result.language)
+        parts.push(result.language);
+    if (result.model && result.model !== requestedModel) {
+        let names = modelNames.get(serverUrl);
+        if (!names) {
+            const models = await fetchModels(serverUrl).catch(() => []);
+            names = new Map(models.map((m) => [m.id, m.name]));
+            if (names.size)
+                modelNames.set(serverUrl, names);
+        }
+        parts.push(names.get(result.model) ?? result.model.split('/').pop());
+    }
+    return parts.join(' · ');
+}
 /**
  * Fetch audio from the TTS server and return raw WAV bytes as a base64 string.
  * We intentionally do NOT produce a data: URL — pages with strict CSP (e.g. GitHub)
  * block data: URIs in media-src. The base64 payload is decoded in-page via the Web
  * Audio API (decodeAudioData) which operates on an ArrayBuffer and is not subject to
  * media-src CSP restrictions.
+ *
+ * An empty `voice` is left out, so the server picks the default voice for the model.
  */
 async function fetchTTS(text, voice, serverUrl, model, language, signal) {
     const url = `${serverUrl}/tts/generate`;
-    const body = { text, voice: voice || DEFAULT_VOICE };
+    const body = { text };
+    if (voice)
+        body.voice = voice;
     if (model)
         body.model = model;
     if (language)
@@ -222,7 +266,11 @@ async function fetchTTS(text, voice, serverUrl, model, language, signal) {
     let binary = '';
     for (const b of bytes)
         binary += String.fromCharCode(b);
-    return btoa(binary); // raw base64, no data: prefix
+    return {
+        audio: btoa(binary), // raw base64, no data: prefix
+        model: response.headers.get('X-Model'),
+        language: response.headers.get('X-Language'),
+    };
 }
 /**
  * Fetch the list of available voices from the server for a given model.

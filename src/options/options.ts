@@ -7,6 +7,8 @@ const api: typeof chrome = typeof browser !== 'undefined' ? browser : chrome;
 const DEFAULT_SERVER_URL = 'http://127.0.0.1:8000';
 const DEFAULT_VOICE = 'af_heart';
 const DEFAULT_MODEL = 'mlx-community/Kokoro-82M-bf16';
+/** A Test sound taking longer than this is probably loading (or downloading) the model. */
+const SLOW_REQUEST_MS = 8000;
 
 // ---------------------------------------------------------------------------
 // DOM refs
@@ -151,6 +153,15 @@ async function refreshVoices(
   }
 }
 
+/** Display name for a language code from `/models`, e.g. "de" → "German". */
+function languageName(code: string): string {
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'language' }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
 function populateModels(modelList: ModelInfo[], selectedId: string): void {
   const current = modelSelect.value;
   modelSelect.innerHTML = '';
@@ -168,8 +179,11 @@ function populateModels(modelList: ModelInfo[], selectedId: string): void {
   for (const m of modelList) {
     const opt = document.createElement('option');
     opt.value = m.id;
-    opt.textContent = `${m.name} — ${m.languages.join(', ')}`;
-    opt.title = m.description;
+    // Kokoro lists 9 languages: summarise long lists, full list in the tooltip.
+    const names = m.languages.map(languageName);
+    const summary = names.length <= 3 ? names.join(', ') : `${names.length} languages`;
+    opt.textContent = `${m.name} — ${summary}`;
+    opt.title = `${m.description}\nLanguages: ${names.join(', ')}`;
     modelSelect.appendChild(opt);
   }
   modelSelect.value = selectedId || current || DEFAULT_MODEL;
@@ -289,7 +303,8 @@ async function testSound(): Promise<void> {
   const controller = new AbortController();
   testFetch = controller;
   const serverUrl = serverUrlInput.value.trim() || DEFAULT_SERVER_URL;
-  const voice = defaultVoiceSelect.value || DEFAULT_VOICE;
+  // An empty voice is left out, so the server picks the default voice for the model.
+  const voice = defaultVoiceSelect.value;
   const model = modelSelect.value || DEFAULT_MODEL;
 
   // Test message
@@ -299,14 +314,16 @@ async function testSound(): Promise<void> {
   testStatus.style.display = 'block';
   testStatus.textContent = 'Playing test sound...';
   testStatus.className = 'test-status test-status--playing';
+  const slowTimer = setTimeout(() => {
+    if (testFetch !== controller) return;
+    testStatus.textContent = 'Loading model… the first use downloads it, which can take a while';
+  }, SLOW_REQUEST_MS);
 
   try {
     // Fetch TTS audio directly from the server
     const url = `${serverUrl}/tts/generate`;
-    const body: Record<string, string> = {
-      text: testText,
-      voice: voice || DEFAULT_VOICE,
-    };
+    const body: Record<string, string> = { text: testText };
+    if (voice) body.voice = voice;
     if (model) body.model = model;
 
     const response = await fetch(url, {
@@ -323,6 +340,8 @@ async function testSound(): Promise<void> {
 
     // Get the audio data as blob
     const audioBlob = await response.blob();
+    clearTimeout(slowTimer);
+    testStatus.textContent = 'Playing test sound...';
     if (controller.signal.aborted) return;
     const audioUrl = URL.createObjectURL(audioBlob);
     testAudioUrl = audioUrl;
@@ -376,6 +395,7 @@ async function testSound(): Promise<void> {
       testStatus.style.display = 'none';
     }, 5000);
   } finally {
+    clearTimeout(slowTimer);
     if (testFetch === controller) testFetch = null;
   }
 }

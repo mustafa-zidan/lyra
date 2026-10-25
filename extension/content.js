@@ -501,6 +501,12 @@
                 buildTextIndex();
                 showStatusBar('Reading aloud…');
                 break;
+            case 'playback-status':
+                // Only update a bar that's showing: a status arriving after Stop is stale.
+                if (statusBar?.style.opacity === '1') {
+                    showStatusBar(message.text);
+                }
+                break;
             case 'chunk-highlight':
                 if (message.text) {
                     highlightChunk(message.text);
