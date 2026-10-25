@@ -34,11 +34,11 @@ let testFetch: AbortController | null = null;
 // ---------------------------------------------------------------------------
 
 interface Voice {
-    id: string;
-    name: string;
-    language?: string | null;
-    gender?: string | null;
-    default?: boolean;
+  id: string;
+  name: string;
+  language?: string | null;
+  gender?: string | null;
+  default?: boolean;
 }
 
 // Full voice list for the selected model; the visible voice dropdown is a
@@ -48,17 +48,17 @@ let allVoices: Voice[] = [];
 let preferredVoice = '';
 
 interface ModelInfo {
-    id: string;
-    name: string;
-    description: string;
-    languages: string[];
-    default: boolean;
+  id: string;
+  name: string;
+  description: string;
+  languages: string[];
+  default: boolean;
 }
 
 interface Settings {
-    serverUrl: string;
-    defaultVoice: string;
-    selectedModel: string;
+  serverUrl: string;
+  defaultVoice: string;
+  selectedModel: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -66,24 +66,24 @@ interface Settings {
 // ---------------------------------------------------------------------------
 
 async function loadSettings(): Promise<void> {
-    const {serverUrl, defaultVoice, selectedModel} = await getSettings();
-    serverUrlInput.value = serverUrl;
+  const { serverUrl, defaultVoice, selectedModel } = await getSettings();
+  serverUrlInput.value = serverUrl;
 
-    // Try to populate models and voices from the server
-    try {
-        const modelsResp = (await api.runtime.sendMessage({action: 'get-models', serverUrl})) as
-            | { models?: ModelInfo[] }
-            | undefined;
-        if (modelsResp?.models?.length) {
-            populateModels(modelsResp.models, selectedModel);
-        } else {
-            populateModels([], selectedModel);
-        }
-    } catch {
-        populateModels([], selectedModel);
+  // Try to populate models and voices from the server
+  try {
+    const modelsResp = (await api.runtime.sendMessage({ action: 'get-models', serverUrl })) as
+      | { models?: ModelInfo[] }
+      | undefined;
+    if (modelsResp?.models?.length) {
+      populateModels(modelsResp.models, selectedModel);
+    } else {
+      populateModels([], selectedModel);
     }
+  } catch {
+    populateModels([], selectedModel);
+  }
 
-    await refreshVoices(serverUrl, modelSelect.value || selectedModel, defaultVoice);
+  await refreshVoices(serverUrl, modelSelect.value || selectedModel, defaultVoice);
 }
 
 // ---------------------------------------------------------------------------
@@ -91,38 +91,38 @@ async function loadSettings(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function checkServer(): Promise<void> {
-    const url = serverUrlInput.value.trim();
-    if (!url) {
-        setStatus('Enter a server URL first.', 'error');
-        return;
+  const url = serverUrlInput.value.trim();
+  if (!url) {
+    setStatus('Enter a server URL first.', 'error');
+    return;
+  }
+
+  setStatus('Checking…', 'idle');
+  try {
+    const healthResp = (await api.runtime.sendMessage({ action: 'health', serverUrl: url })) as
+      | { available?: boolean; status?: string }
+      | undefined;
+
+    if (!healthResp?.available) {
+      setStatus('Server reachable but TTS backend offline.', 'error');
+      return;
     }
 
-    setStatus('Checking…', 'idle');
-    try {
-        const healthResp = (await api.runtime.sendMessage({action: 'health', serverUrl: url})) as
-            | { available?: boolean; status?: string }
-            | undefined;
+    setStatus(`Connected ✓  (provider: ${healthResp.status ?? 'ok'})`, 'ok');
 
-        if (!healthResp?.available) {
-            setStatus('Server reachable but TTS backend offline.', 'error');
-            return;
-        }
-
-        setStatus(`Connected ✓  (provider: ${healthResp.status ?? 'ok'})`, 'ok');
-
-        // Refresh models
-        const modelsResp = (await api.runtime.sendMessage({action: 'get-models', serverUrl: url})) as
-            | { models?: ModelInfo[] }
-            | undefined;
-        if (modelsResp?.models?.length) {
-            populateModels(modelsResp.models, modelSelect.value);
-        }
-
-        // Refresh voices for current model
-        await refreshVoices(url, modelSelect.value, defaultVoiceSelect.value);
-    } catch (err) {
-        setStatus(`Cannot reach server: ${(err as Error).message}`, 'error');
+    // Refresh models
+    const modelsResp = (await api.runtime.sendMessage({ action: 'get-models', serverUrl: url })) as
+      | { models?: ModelInfo[] }
+      | undefined;
+    if (modelsResp?.models?.length) {
+      populateModels(modelsResp.models, modelSelect.value);
     }
+
+    // Refresh voices for current model
+    await refreshVoices(url, modelSelect.value, defaultVoiceSelect.value);
+  } catch (err) {
+    setStatus(`Cannot reach server: ${(err as Error).message}`, 'error');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -130,49 +130,49 @@ async function checkServer(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function refreshVoices(
-    serverUrl: string,
-    modelId: string,
-    selectedVoiceId: string,
+  serverUrl: string,
+  modelId: string,
+  selectedVoiceId: string,
 ): Promise<void> {
-    try {
-        const resp = (await api.runtime.sendMessage({
-            action: 'get-voices',
-            serverUrl,
-            model: modelId,
-        })) as { voices?: Voice[] } | undefined;
+  try {
+    const resp = (await api.runtime.sendMessage({
+      action: 'get-voices',
+      serverUrl,
+      model: modelId,
+    })) as { voices?: Voice[] } | undefined;
 
-        if (resp?.voices?.length) {
-            setVoices(resp.voices, selectedVoiceId);
-        } else {
-            setVoices([], selectedVoiceId);
-        }
-    } catch {
-        setVoices([], selectedVoiceId);
+    if (resp?.voices?.length) {
+      setVoices(resp.voices, selectedVoiceId);
+    } else {
+      setVoices([], selectedVoiceId);
     }
+  } catch {
+    setVoices([], selectedVoiceId);
+  }
 }
 
 function populateModels(modelList: ModelInfo[], selectedId: string): void {
-    const current = modelSelect.value;
-    modelSelect.innerHTML = '';
+  const current = modelSelect.value;
+  modelSelect.innerHTML = '';
 
-    if (modelList.length === 0) {
-        // Fallback: add only the default model as a placeholder
-        const opt = document.createElement('option');
-        opt.value = DEFAULT_MODEL;
-        opt.textContent = 'Kokoro 82M (default)';
-        modelSelect.appendChild(opt);
-        modelSelect.value = selectedId || DEFAULT_MODEL;
-        return;
-    }
+  if (modelList.length === 0) {
+    // Fallback: add only the default model as a placeholder
+    const opt = document.createElement('option');
+    opt.value = DEFAULT_MODEL;
+    opt.textContent = 'Kokoro 82M (default)';
+    modelSelect.appendChild(opt);
+    modelSelect.value = selectedId || DEFAULT_MODEL;
+    return;
+  }
 
-    for (const m of modelList) {
-        const opt = document.createElement('option');
-        opt.value = m.id;
-        opt.textContent = `${m.name} — ${m.languages.join(', ')}`;
-        opt.title = m.description;
-        modelSelect.appendChild(opt);
-    }
-    modelSelect.value = selectedId || current || DEFAULT_MODEL;
+  for (const m of modelList) {
+    const opt = document.createElement('option');
+    opt.value = m.id;
+    opt.textContent = `${m.name} — ${m.languages.join(', ')}`;
+    opt.title = m.description;
+    modelSelect.appendChild(opt);
+  }
+  modelSelect.value = selectedId || current || DEFAULT_MODEL;
 }
 
 /**
@@ -180,90 +180,90 @@ function populateModels(modelList: ModelInfo[], selectedId: string): void {
  * the available metadata, and render the (filtered) voice dropdown.
  */
 function setVoices(voices: Voice[], selectedId: string): void {
-    allVoices = voices;
-    preferredVoice = selectedId || defaultVoiceSelect.value || DEFAULT_VOICE;
-    populateFilterOptions(
-        languageFilter,
-        voices.map((v) => v.language),
-    );
-    populateFilterOptions(
-        genderFilter,
-        voices.map((v) => v.gender),
-    );
-    applyVoiceFilter();
+  allVoices = voices;
+  preferredVoice = selectedId || defaultVoiceSelect.value || DEFAULT_VOICE;
+  populateFilterOptions(
+    languageFilter,
+    voices.map((v) => v.language),
+  );
+  populateFilterOptions(
+    genderFilter,
+    voices.map((v) => v.gender),
+  );
+  applyVoiceFilter();
 }
 
 /** Fill a filter <select> with the distinct, non-empty values (plus "All"). */
 function populateFilterOptions(
-    select: HTMLSelectElement,
-    values: (string | null | undefined)[],
+  select: HTMLSelectElement,
+  values: (string | null | undefined)[],
 ): void {
-    const distinct = [...new Set(values.filter((v): v is string => !!v))].sort();
-    const wrapper = select.closest('.field') as HTMLElement | null;
-    if (wrapper) wrapper.style.display = distinct.length > 1 ? '' : 'none';
-    select.innerHTML = '<option value="">All</option>';
-    for (const value of distinct) {
-        const opt = document.createElement('option');
-        opt.value = value;
-        opt.textContent = value;
-        select.appendChild(opt);
-    }
+  const distinct = [...new Set(values.filter((v): v is string => !!v))].sort();
+  const wrapper = select.closest('.field') as HTMLElement | null;
+  if (wrapper) wrapper.style.display = distinct.length > 1 ? '' : 'none';
+  select.innerHTML = '<option value="">All</option>';
+  for (const value of distinct) {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = value;
+    select.appendChild(opt);
+  }
 }
 
 /** Render the default-voice dropdown filtered by the current language/gender selection. */
 function applyVoiceFilter(): void {
-    const lang = languageFilter.value;
-    const gender = genderFilter.value;
-    const previous = defaultVoiceSelect.value || preferredVoice;
+  const lang = languageFilter.value;
+  const gender = genderFilter.value;
+  const previous = defaultVoiceSelect.value || preferredVoice;
 
-    defaultVoiceSelect.innerHTML = '';
+  defaultVoiceSelect.innerHTML = '';
 
-    if (allVoices.length === 0) {
-        const opt = document.createElement('option');
-        opt.value = DEFAULT_VOICE;
-        opt.textContent = 'Default';
-        defaultVoiceSelect.appendChild(opt);
-        defaultVoiceSelect.value = previous || DEFAULT_VOICE;
-        return;
-    }
+  if (allVoices.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = DEFAULT_VOICE;
+    opt.textContent = 'Default';
+    defaultVoiceSelect.appendChild(opt);
+    defaultVoiceSelect.value = previous || DEFAULT_VOICE;
+    return;
+  }
 
-    const filtered = allVoices.filter(
-        (v) => (!lang || v.language === lang) && (!gender || v.gender === gender),
-    );
+  const filtered = allVoices.filter(
+    (v) => (!lang || v.language === lang) && (!gender || v.gender === gender),
+  );
 
-    if (filtered.length === 0) {
-        const opt = document.createElement('option');
-        opt.value = '';
-        opt.textContent = 'No matching voices';
-        defaultVoiceSelect.appendChild(opt);
-        return;
-    }
+  if (filtered.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'No matching voices';
+    defaultVoiceSelect.appendChild(opt);
+    return;
+  }
 
-    for (const v of filtered) {
-        const opt = document.createElement('option');
-        opt.value = v.id;
-        opt.textContent = v.name;
-        defaultVoiceSelect.appendChild(opt);
-    }
+  for (const v of filtered) {
+    const opt = document.createElement('option');
+    opt.value = v.id;
+    opt.textContent = v.name;
+    defaultVoiceSelect.appendChild(opt);
+  }
 
-    const keep = filtered.find((v) => v.id === previous) ?? filtered.find((v) => v.default);
-    defaultVoiceSelect.value = keep ? keep.id : filtered[0].id;
+  const keep = filtered.find((v) => v.id === previous) ?? filtered.find((v) => v.default);
+  defaultVoiceSelect.value = keep ? keep.id : filtered[0].id;
 }
 
 function setStatus(message: string, type: 'idle' | 'ok' | 'error'): void {
-    serverStatus.textContent = message;
-    serverStatus.className = `server-status server-status--${type}`;
+  serverStatus.textContent = message;
+  serverStatus.className = `server-status server-status--${type}`;
 }
 
 async function getSettings(): Promise<Settings> {
-    return new Promise((resolve) => {
-        api.storage.local.get(
-            {serverUrl: DEFAULT_SERVER_URL, defaultVoice: DEFAULT_VOICE, selectedModel: DEFAULT_MODEL},
-            (items) => {
-                resolve(items as unknown as Settings);
-            },
-        );
-    });
+  return new Promise((resolve) => {
+    api.storage.local.get(
+      { serverUrl: DEFAULT_SERVER_URL, defaultVoice: DEFAULT_VOICE, selectedModel: DEFAULT_MODEL },
+      (items) => {
+        resolve(items as unknown as Settings);
+      },
+    );
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -271,113 +271,113 @@ async function getSettings(): Promise<Settings> {
 // ---------------------------------------------------------------------------
 
 async function testSound(): Promise<void> {
-    testFetch?.abort();
-    testFetch = null;
+  testFetch?.abort();
+  testFetch = null;
+  if (testAudio) {
+    testAudio.pause();
+    testAudio.onended = null;
+    testAudio.onerror = null;
+    testAudio.removeAttribute('src');
+    testAudio.load();
+    testAudio = null;
+  }
+  if (testAudioUrl) {
+    URL.revokeObjectURL(testAudioUrl);
+    testAudioUrl = null;
+  }
+
+  const controller = new AbortController();
+  testFetch = controller;
+  const serverUrl = serverUrlInput.value.trim() || DEFAULT_SERVER_URL;
+  const voice = defaultVoiceSelect.value || DEFAULT_VOICE;
+  const model = modelSelect.value || DEFAULT_MODEL;
+
+  // Test message
+  const testText = 'Hello! This is a test of the text-to-speech system.';
+
+  // Show status
+  testStatus.style.display = 'block';
+  testStatus.textContent = 'Playing test sound...';
+  testStatus.className = 'test-status test-status--playing';
+
+  try {
+    // Fetch TTS audio directly from the server
+    const url = `${serverUrl}/tts/generate`;
+    const body: Record<string, string> = {
+      text: testText,
+      voice: voice || DEFAULT_VOICE,
+    };
+    if (model) body.model = model;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const json = (await response.json().catch(() => ({}))) as { detail?: string };
+      throw new Error(json.detail ?? `Server error ${response.status}`);
+    }
+
+    // Get the audio data as blob
+    const audioBlob = await response.blob();
+    if (controller.signal.aborted) return;
+    const audioUrl = URL.createObjectURL(audioBlob);
+    testAudioUrl = audioUrl;
+
+    // Play the audio using HTML5 Audio
+    const audio = new Audio(audioUrl);
+    testAudio = audio;
+
+    audio.onended = () => {
+      if (testAudio !== audio) return;
+      URL.revokeObjectURL(audioUrl);
+      testAudioUrl = null;
+      testAudio = null;
+      testStatus.textContent = 'Test sound played successfully!';
+      testStatus.className = 'test-status test-status--success';
+      setTimeout(() => {
+        testStatus.style.display = 'none';
+      }, 3000);
+    };
+
+    audio.onerror = () => {
+      if (testAudio !== audio) return;
+      URL.revokeObjectURL(audioUrl);
+      testAudioUrl = null;
+      testAudio = null;
+      testStatus.textContent = 'Error: Failed to play audio';
+      testStatus.className = 'test-status test-status--error';
+      setTimeout(() => {
+        testStatus.style.display = 'none';
+      }, 5000);
+    };
+
+    await audio.play();
+  } catch (err) {
+    if (controller.signal.aborted || testFetch !== controller) return;
     if (testAudio) {
-        testAudio.pause();
-        testAudio.onended = null;
-        testAudio.onerror = null;
-        testAudio.removeAttribute('src');
-        testAudio.load();
-        testAudio = null;
+      testAudio.pause();
+      testAudio.onended = null;
+      testAudio.onerror = null;
+      testAudio.removeAttribute('src');
+      testAudio.load();
+      testAudio = null;
     }
     if (testAudioUrl) {
-        URL.revokeObjectURL(testAudioUrl);
-        testAudioUrl = null;
+      URL.revokeObjectURL(testAudioUrl);
+      testAudioUrl = null;
     }
-
-    const controller = new AbortController();
-    testFetch = controller;
-    const serverUrl = serverUrlInput.value.trim() || DEFAULT_SERVER_URL;
-    const voice = defaultVoiceSelect.value || DEFAULT_VOICE;
-    const model = modelSelect.value || DEFAULT_MODEL;
-
-    // Test message
-    const testText = 'Hello! This is a test of the text-to-speech system.';
-
-    // Show status
-    testStatus.style.display = 'block';
-    testStatus.textContent = 'Playing test sound...';
-    testStatus.className = 'test-status test-status--playing';
-
-    try {
-        // Fetch TTS audio directly from the server
-        const url = `${serverUrl}/tts/generate`;
-        const body: Record<string, string> = {
-            text: testText,
-            voice: voice || DEFAULT_VOICE,
-        };
-        if (model) body.model = model;
-
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(body),
-            signal: controller.signal,
-        });
-
-        if (!response.ok) {
-            const json = (await response.json().catch(() => ({}))) as { detail?: string };
-            throw new Error(json.detail ?? `Server error ${response.status}`);
-        }
-
-        // Get the audio data as blob
-        const audioBlob = await response.blob();
-        if (controller.signal.aborted) return;
-        const audioUrl = URL.createObjectURL(audioBlob);
-        testAudioUrl = audioUrl;
-
-        // Play the audio using HTML5 Audio
-        const audio = new Audio(audioUrl);
-        testAudio = audio;
-
-        audio.onended = () => {
-            if (testAudio !== audio) return;
-            URL.revokeObjectURL(audioUrl);
-            testAudioUrl = null;
-            testAudio = null;
-            testStatus.textContent = 'Test sound played successfully!';
-            testStatus.className = 'test-status test-status--success';
-            setTimeout(() => {
-                testStatus.style.display = 'none';
-            }, 3000);
-        };
-
-        audio.onerror = () => {
-            if (testAudio !== audio) return;
-            URL.revokeObjectURL(audioUrl);
-            testAudioUrl = null;
-            testAudio = null;
-            testStatus.textContent = 'Error: Failed to play audio';
-            testStatus.className = 'test-status test-status--error';
-            setTimeout(() => {
-                testStatus.style.display = 'none';
-            }, 5000);
-        };
-
-        await audio.play();
-    } catch (err) {
-        if (controller.signal.aborted || testFetch !== controller) return;
-        if (testAudio) {
-            testAudio.pause();
-            testAudio.onended = null;
-            testAudio.onerror = null;
-            testAudio.removeAttribute('src');
-            testAudio.load();
-            testAudio = null;
-        }
-        if (testAudioUrl) {
-            URL.revokeObjectURL(testAudioUrl);
-            testAudioUrl = null;
-        }
-        testStatus.textContent = `Error: ${(err as Error).message}`;
-        testStatus.className = 'test-status test-status--error';
-        setTimeout(() => {
-            testStatus.style.display = 'none';
-        }, 5000);
-    } finally {
-        if (testFetch === controller) testFetch = null;
-    }
+    testStatus.textContent = `Error: ${(err as Error).message}`;
+    testStatus.className = 'test-status test-status--error';
+    setTimeout(() => {
+      testStatus.style.display = 'none';
+    }, 5000);
+  } finally {
+    if (testFetch === controller) testFetch = null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -385,25 +385,25 @@ async function testSound(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function saveSettings(): Promise<void> {
-    const serverUrl = serverUrlInput.value.trim() || DEFAULT_SERVER_URL;
-    const defaultVoice = defaultVoiceSelect.value || DEFAULT_VOICE;
-    const selectedModel = modelSelect.value || DEFAULT_MODEL;
+  const serverUrl = serverUrlInput.value.trim() || DEFAULT_SERVER_URL;
+  const defaultVoice = defaultVoiceSelect.value || DEFAULT_VOICE;
+  const selectedModel = modelSelect.value || DEFAULT_MODEL;
 
-    await new Promise<void>((resolve) => {
-        api.storage.local.set({serverUrl, defaultVoice, selectedModel}, resolve);
-    });
+  await new Promise<void>((resolve) => {
+    api.storage.local.set({ serverUrl, defaultVoice, selectedModel }, resolve);
+  });
 
-    saveMsg.textContent = 'Settings saved!';
-    setTimeout(() => {
-        saveMsg.textContent = '';
-    }, 2500);
+  saveMsg.textContent = 'Settings saved!';
+  setTimeout(() => {
+    saveMsg.textContent = '';
+  }, 2500);
 }
 
 function resetSettings(): void {
-    serverUrlInput.value = DEFAULT_SERVER_URL;
-    populateModels([], DEFAULT_MODEL);
-    setVoices([], DEFAULT_VOICE);
-    setStatus('Reset to defaults. Click Save to apply.', 'idle');
+  serverUrlInput.value = DEFAULT_SERVER_URL;
+  populateModels([], DEFAULT_MODEL);
+  setVoices([], DEFAULT_VOICE);
+  setStatus('Reset to defaults. Click Save to apply.', 'idle');
 }
 
 // ---------------------------------------------------------------------------
@@ -421,8 +421,8 @@ genderFilter.addEventListener('change', applyVoiceFilter);
 
 // When model changes, refresh voice list
 modelSelect.addEventListener('change', async () => {
-    const serverUrl = serverUrlInput.value.trim() || DEFAULT_SERVER_URL;
-    await refreshVoices(serverUrl, modelSelect.value, '');
+  const serverUrl = serverUrlInput.value.trim() || DEFAULT_SERVER_URL;
+  await refreshVoices(serverUrl, modelSelect.value, '');
 });
 
 document.addEventListener('DOMContentLoaded', loadSettings);

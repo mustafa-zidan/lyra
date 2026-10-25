@@ -12,7 +12,7 @@
 // Cross-browser API shim (Firefox uses `browser`, Chrome uses `chrome`).
 // Both are declared as globals in eslint.config.js no import needed.
 const api: typeof chrome | null =
-    typeof browser !== 'undefined' ? browser : typeof chrome !== 'undefined' ? chrome : null;
+  typeof browser !== 'undefined' ? browser : typeof chrome !== 'undefined' ? chrome : null;
 
 // ---------------------------------------------------------------------------
 // Constants / defaults
@@ -84,10 +84,10 @@ interface HealthStatus {
 async function getSettings(): Promise<Settings> {
   return new Promise((resolve) => {
     api!.storage.local.get(
-        {serverUrl: DEFAULT_SERVER_URL, defaultVoice: DEFAULT_VOICE, selectedModel: DEFAULT_MODEL},
-        (items) => {
-          resolve(items as unknown as Settings);
-        },
+      { serverUrl: DEFAULT_SERVER_URL, defaultVoice: DEFAULT_VOICE, selectedModel: DEFAULT_MODEL },
+      (items) => {
+        resolve(items as unknown as Settings);
+      },
     );
   });
 }
@@ -110,10 +110,10 @@ if (api) {
     const text = info.selectionText?.trim();
     if (!text || !tab?.id) return;
 
-    const {serverUrl, defaultVoice, selectedModel} = await getSettings();
+    const { serverUrl, defaultVoice, selectedModel } = await getSettings();
     const selection = (await api!.tabs
-        .sendMessage(tab.id, {action: 'get-selection'})
-        .catch(() => undefined)) as { language?: string } | undefined;
+      .sendMessage(tab.id, { action: 'get-selection' })
+      .catch(() => undefined)) as { language?: string } | undefined;
     await speakInTab(tab.id, text, defaultVoice, serverUrl, selectedModel, selection?.language);
   });
 
@@ -123,26 +123,26 @@ if (api) {
 
   api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     handleMessage(message as ExtMessage, sender)
-        .then(sendResponse)
-        .catch((err: Error) => {
-          sendResponse({ok: false, error: err.message});
-        });
+      .then(sendResponse)
+      .catch((err: Error) => {
+        sendResponse({ ok: false, error: err.message });
+      });
     return true; // keep channel open for async response
   });
 }
 
 async function handleMessage(
-    message: ExtMessage,
-    sender: chrome.runtime.MessageSender,
+  message: ExtMessage,
+  sender: chrome.runtime.MessageSender,
 ): Promise<Record<string, unknown>> {
-  const {action} = message;
+  const { action } = message;
 
   if (action === 'speak') {
     const tabId = sender.tab?.id ?? (await getActiveTabId());
-    if (!tabId) return {ok: false, error: 'No active tab'};
+    if (!tabId) return { ok: false, error: 'No active tab' };
 
     const text = message.text?.trim();
-    if (!text) return {ok: false, error: 'No text provided'};
+    if (!text) return { ok: false, error: 'No text provided' };
 
     // The in-page selection button only sends `text`; fall back to the saved
     // settings for anything the caller (e.g. the popup) didn't specify.
@@ -152,7 +152,7 @@ async function handleMessage(
     const model = message.model ?? settings.selectedModel;
 
     speakInTab(tabId, text, voice, serverUrl, model, message.language).catch(console.error);
-    return {ok: true};
+    return { ok: true };
   }
 
   if (action === 'stop') {
@@ -169,30 +169,30 @@ async function handleMessage(
     if (tabId !== null) tabsToStop.add(tabId);
     for (const targetTabId of tabsToStop) {
       await stopAudioInTab(targetTabId); // halt audio already playing in the page
-      notifyTab(targetTabId, {action: 'playback-stopped'});
+      notifyTab(targetTabId, { action: 'playback-stopped' });
     }
-    return {ok: true};
+    return { ok: true };
   }
 
   if (action === 'get-voices') {
-    const {serverUrl, model} = message;
+    const { serverUrl, model } = message;
     const voices = await fetchVoices(serverUrl ?? DEFAULT_SERVER_URL, model);
-    return {ok: true, voices};
+    return { ok: true, voices };
   }
 
   if (action === 'get-models') {
-    const {serverUrl} = message;
+    const { serverUrl } = message;
     const models = await fetchModels(serverUrl ?? DEFAULT_SERVER_URL);
-    return {ok: true, models};
+    return { ok: true, models };
   }
 
   if (action === 'health') {
-    const {serverUrl} = message;
+    const { serverUrl } = message;
     const status = await fetchHealth(serverUrl ?? DEFAULT_SERVER_URL);
-    return {ok: true, ...status};
+    return { ok: true, ...status };
   }
 
-  return {ok: false, error: `Unknown action: ${action}`};
+  return { ok: false, error: `Unknown action: ${action}` };
 }
 
 // ---------------------------------------------------------------------------
@@ -203,12 +203,12 @@ async function handleMessage(
  * Generate speech for each chunk of text, highlighting and playing sequentially.
  */
 async function speakInTab(
-    tabId: number,
-    text: string,
-    voice: string,
-    serverUrl: string,
-    model: string,
-    language?: string,
+  tabId: number,
+  text: string,
+  voice: string,
+  serverUrl: string,
+  model: string,
+  language?: string,
 ): Promise<void> {
   // Claim this read; any older loop will see playbackSession move past its id.
   const session = ++playbackSession;
@@ -218,12 +218,12 @@ async function speakInTab(
   activeFetch = null;
   if (previousTabId !== null && previousTabId !== tabId) {
     await stopAudioInTab(previousTabId);
-    notifyTab(previousTabId, {action: 'playback-stopped'});
+    notifyTab(previousTabId, { action: 'playback-stopped' });
   }
   await stopAudioInTab(tabId); // stop audio lingering from a previous read
   if (session !== playbackSession) return;
 
-  notifyTab(tabId, {action: 'playback-started', text});
+  notifyTab(tabId, { action: 'playback-started', text });
 
   try {
     const chunks = chunkText(text);
@@ -231,7 +231,7 @@ async function speakInTab(
       if (session !== playbackSession) return; // stopped or superseded
 
       // Signal content script to highlight this chunk before fetching audio
-      notifyTab(tabId, {action: 'chunk-highlight', text: chunk});
+      notifyTab(tabId, { action: 'chunk-highlight', text: chunk });
 
       const controller = new AbortController();
       activeFetch = controller;
@@ -251,11 +251,11 @@ async function speakInTab(
       if (session !== playbackSession) return; // stopped during playback
     }
     // Clear highlight after all chunks finish
-    notifyTab(tabId, {action: 'chunk-highlight', text: null});
-    notifyTab(tabId, {action: 'playback-finished'});
+    notifyTab(tabId, { action: 'chunk-highlight', text: null });
+    notifyTab(tabId, { action: 'playback-finished' });
   } catch (err) {
-    notifyTab(tabId, {action: 'chunk-highlight', text: null});
-    notifyTab(tabId, {action: 'playback-error', error: (err as Error).message});
+    notifyTab(tabId, { action: 'chunk-highlight', text: null });
+    notifyTab(tabId, { action: 'playback-error', error: (err as Error).message });
   } finally {
     if (session === playbackSession && playbackTabId === tabId) playbackTabId = null;
   }
@@ -269,21 +269,21 @@ async function speakInTab(
  * media-src CSP restrictions.
  */
 async function fetchTTS(
-    text: string,
-    voice: string,
-    serverUrl: string,
-    model: string,
-    language: string | undefined,
-    signal?: AbortSignal,
+  text: string,
+  voice: string,
+  serverUrl: string,
+  model: string,
+  language: string | undefined,
+  signal?: AbortSignal,
 ): Promise<string> {
   const url = `${serverUrl}/tts/generate`;
-  const body: Record<string, string> = {text, voice: voice || DEFAULT_VOICE};
+  const body: Record<string, string> = { text, voice: voice || DEFAULT_VOICE };
   if (model) body.model = model;
   if (language) body.language = language;
 
   const response = await fetch(url, {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
     signal,
   });
@@ -329,9 +329,9 @@ async function fetchHealth(serverUrl: string): Promise<HealthStatus> {
   try {
     const response = await fetch(`${serverUrl}/health`);
     const data = (await response.json()) as { tts_available: boolean; status: string };
-    return {available: data.tts_available, status: data.status};
+    return { available: data.tts_available, status: data.status };
   } catch {
-    return {available: false, status: 'unreachable'};
+    return { available: false, status: 'unreachable' };
   }
 }
 
@@ -371,7 +371,7 @@ function notifyTab(tabId: number, payload: Record<string, unknown>): void {
 
 async function getActiveTabId(): Promise<number | null> {
   return new Promise((resolve) => {
-    api!.tabs.query({active: true, currentWindow: true}, (tabs) => {
+    api!.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       resolve(tabs[0]?.id ?? null);
     });
   });
@@ -396,7 +396,7 @@ async function getActiveTabId(): Promise<number | null> {
  */
 async function playAudioInTab(tabId: number, audioBase64: string): Promise<void> {
   try {
-    await api!.tabs.sendMessage(tabId, {action: 'play-audio', audio: audioBase64});
+    await api!.tabs.sendMessage(tabId, { action: 'play-audio', audio: audioBase64 });
   } catch {
     // Tab closed or no content script present — safe to ignore.
   }
@@ -404,7 +404,7 @@ async function playAudioInTab(tabId: number, audioBase64: string): Promise<void>
 
 /** Tell the content script to halt any audio currently playing in the tab. */
 async function stopAudioInTab(tabId: number): Promise<void> {
-  notifyTab(tabId, {action: 'stop-audio'});
+  notifyTab(tabId, { action: 'stop-audio' });
 }
 
 export {};
