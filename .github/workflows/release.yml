@@ -11,8 +11,8 @@ jobs:
     name: Server tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
         with:
           enable-cache: true
           python-version: "3.12"
@@ -25,11 +25,11 @@ jobs:
     name: Extension tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           run_install: true
       - run: pnpm exec playwright install --with-deps chromium
@@ -43,13 +43,13 @@ jobs:
     needs: [test-server, test-extension]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           run_install: true
 
@@ -57,7 +57,7 @@ jobs:
         run: pnpm run build:ext
 
       - name: Upload extension artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lyra-extension-${{ github.ref_name }}
           path: dist/*.zip
@@ -69,9 +69,9 @@ jobs:
     needs: [test-server, test-extension]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v10.3.2
         with:
           enable-cache: true
           python-version: "3.12"
@@ -80,7 +80,7 @@ jobs:
         run: uv build --wheel
 
       - name: Upload wheel artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lyra-server-${{ github.ref_name }}
           path: dist/*.whl
@@ -96,19 +96,19 @@ jobs:
 
     steps:
       - name: Download extension artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: lyra-extension-${{ github.ref_name }}
           path: release/
 
       - name: Download server artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: lyra-server-${{ github.ref_name }}
           path: release/
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: release/*
           generate_release_notes: true

@@ -113,6 +113,22 @@
   and 0.17.2 clean, Prettier/ESLint/typecheck clean. Learned: the local Playwright Chromium 1208 was a broken partial
   extraction, so locally it is symlinked to the complete 1248 build (machine-only workaround).
 
+- [x] Upgrade all dependencies and add Dependabot. Python: `uv lock --upgrade` (fastapi 0.162, uvicorn 0.54,
+  mlx-audio 0.6.1, transformers 5.20, huggingface-hub 2.3, ruff 0.17.2, …) and raised the `pyproject.toml` floors to
+  match. `preshed` held at 3.0.13 via `constraint-dependencies`: 3.0.14 makes spaCy 3.8.16 fail loading
+  `en_core_web_sm` (`OverflowError` in `Tokenizer._flush_specials`), which kills English G2P while unit tests stay
+  green. JS: ESLint 10, globals 17, Playwright 1.64, Prettier 3.9 (reformatted two `as` casts), web-ext 10,
+  @types/chrome 0.3; TypeScript 6.0.3, not 7, because typescript-eslint 8.72 requires TS < 6.1. TS 6 no longer loads
+  `@types/*` by default, so `tsconfig.json` sets `types: ["chrome"]`. Actions: checkout v7, setup-node v7, pnpm v6,
+  upload-artifact v7, download-artifact v8, action-gh-release v3, setup-uv v10.3.2 (setup-uv stopped publishing
+  major tags in v8, so it must be pinned exactly). pre-commit: ruff v0.17.2 (`ruff` → `ruff-check`), hooks v6.0.0;
+  the local ESLint/Prettier hooks were `language: node` and errored on every run, now `language: system`.
+  `.github/dependabot.yml`: weekly uv, npm, github-actions and pre-commit updates, minor/patch grouped, TypeScript
+  majors ignored. Verified: real Kokoro synthesis (en-US, ja, fr, German Victoria), 43 pytest (42 + 1 skip without
+  extras), ruff clean, typecheck/ESLint/Prettier clean, 23 Playwright tests in Chromium, `web-ext build`, all
+  pre-commit hooks. Follow-ups: drop the preshed constraint once a fixed release ships; move to TypeScript 7 when
+  typescript-eslint supports it; `packageManager` is still pnpm@10.0.0.
+
 ## Notes
 
 - Reflection/verification: implemented cross-tab playback ownership, pending content-script audio resolution on stop,

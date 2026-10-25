@@ -9,6 +9,7 @@
     "outDir": "extension",
     "rootDir": "src",
     "skipLibCheck": true,
+    "types": ["chrome"],
     "declaration": false
   },
   "include": ["src/**/*.ts"]

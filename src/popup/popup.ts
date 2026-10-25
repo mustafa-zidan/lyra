@@ -98,8 +98,7 @@ async function readSelection(serverUrl: string, model: string): Promise<void> {
   if (!tab?.id) return;
 
   const response = (await api.tabs.sendMessage(tab.id, { action: 'get-selection' })) as
-    | { text?: string; language?: string }
-    | undefined;
+    { text?: string; language?: string } | undefined;
   const text = response?.text?.trim();
   if (!text) {
     statusBadge.textContent = 'No text selected';

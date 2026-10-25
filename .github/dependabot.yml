@@ -1,0 +1,56 @@
+# Weekly dependency updates. Minor and patch bumps are grouped into one PR per ecosystem;
+# major bumps get their own PR so breaking changes can be reviewed one at a time.
+version: 2
+
+updates:
+  # Python server: pyproject.toml + uv.lock
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      python-minor:
+        update-types: [minor, patch]
+
+  # Browser extension tooling: package.json + pnpm-lock.yaml
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      js-minor:
+        update-types: [minor, patch]
+    ignore:
+      # typescript-eslint 8.x only supports TypeScript < 6.1; drop this once it supports 7.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
+
+  # Workflow actions in .github/workflows
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Hook revisions in .pre-commit-config.yaml
+  - package-ecosystem: pre-commit
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      pre-commit-hooks:
+        patterns: ["*"]

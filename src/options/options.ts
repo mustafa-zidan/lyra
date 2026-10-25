@@ -74,8 +74,7 @@ async function loadSettings(): Promise<void> {
   // Try to populate models and voices from the server
   try {
     const modelsResp = (await api.runtime.sendMessage({ action: 'get-models', serverUrl })) as
-      | { models?: ModelInfo[] }
-      | undefined;
+      { models?: ModelInfo[] } | undefined;
     if (modelsResp?.models?.length) {
       populateModels(modelsResp.models, selectedModel);
     } else {
@@ -102,8 +101,7 @@ async function checkServer(): Promise<void> {
   setStatus('Checking…', 'idle');
   try {
     const healthResp = (await api.runtime.sendMessage({ action: 'health', serverUrl: url })) as
-      | { available?: boolean; status?: string }
-      | undefined;
+      { available?: boolean; status?: string } | undefined;
 
     if (!healthResp?.available) {
       setStatus('Server reachable but TTS backend offline.', 'error');
@@ -114,8 +112,7 @@ async function checkServer(): Promise<void> {
 
     // Refresh models
     const modelsResp = (await api.runtime.sendMessage({ action: 'get-models', serverUrl: url })) as
-      | { models?: ModelInfo[] }
-      | undefined;
+      { models?: ModelInfo[] } | undefined;
     if (modelsResp?.models?.length) {
       populateModels(modelsResp.models, modelSelect.value);
     }
