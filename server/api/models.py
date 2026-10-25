@@ -16,7 +16,10 @@ class TTSRequest(BaseModel):
     )
     voice: str | None = Field(
         default=None,
-        description="Voice ID to use. Defaults to the server's configured default voice.",
+        description=(
+            "Voice ID to use. Defaults to the server's configured default voice, or the "
+            "model's first voice if the default doesn't belong to the model."
+        ),
         examples=["af_heart"],
     )
     model: str | None = Field(
@@ -30,10 +33,10 @@ class TTSRequest(BaseModel):
         default=None,
         max_length=35,
         description=(
-            "Optional BCP-47 language hint, e.g. the page's lang attribute. Text in Japanese, "
-            "Chinese or Hindi script is detected automatically; the hint covers Latin-script "
-            "languages. If the voice doesn't speak the resolved language, a matching voice "
-            "is used instead (reported in X-Voice)."
+            "Optional BCP-47 language hint, e.g. the page's lang attribute. Non-Latin scripts "
+            "(Japanese, Chinese, Hindi) are detected automatically; the hint covers Latin-script "
+            "languages. If the model or voice can't speak the resolved language, one that can "
+            "is used instead (reported in X-Model / X-Voice)."
         ),
         examples=["ja", "pt-BR"],
     )

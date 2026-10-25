@@ -43,7 +43,10 @@ _VALID_FORMATS = {"wav"}
                     "schema": {"type": "string"},
                 },
                 "X-Model": {
-                    "description": "Model used for generation.",
+                    "description": (
+                        "Model used for generation; differs from the requested one when that "
+                        "model can't speak the text's language."
+                    ),
                     "schema": {"type": "string"},
                 },
                 "X-Language": {
@@ -93,7 +96,7 @@ async def generate(body: TTSRequest, request: Request) -> Response:
             "X-Audio-Duration": str(round(audio.duration, 3)),
             "X-Cached": str(audio.cached).lower(),
             "X-Voice": audio.voice,
-            "X-Model": body.model or "",
+            "X-Model": audio.model,
             "X-Language": audio.language,
             "Cache-Control": "no-store",
         },

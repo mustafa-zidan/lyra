@@ -11,12 +11,14 @@ from fastapi.testclient import TestClient
 
 from server.core.config import Settings
 from server.core.mlx_tts_service import (
-    _MLX_AVAILABLE,
     MODELS,
     MLXTTSService,
     _array_to_wav,
-    _lang_code_from_tag,
+    _language_from_tag,
 )
+
+KOKORO = "mlx-community/Kokoro-82M-bf16"
+GERMAN_VICTORIA = "kikiri-tts/kikiri-german-victoria"
 
 
 @pytest.fixture()
@@ -42,6 +44,17 @@ async def test_generate_rejects_unknown_model(service: MLXTTSService) -> None:
         await service.generate("Hi", model_id="eurydice")
 
 
+@pytest.mark.parametrize(
+    ("model", "expected_voice"),
+    [(KOKORO, "af_heart"), (GERMAN_VICTORIA, "df_victoria")],
+)
+async def test_generate_without_voice_uses_a_voice_of_the_model(
+    service: MLXTTSService, captured_generate: list[tuple], model: str, expected_voice: str
+) -> None:
+    result = await service.generate("Hello there", model_id=model)
+    assert result.voice == expected_voice
+
+
 def test_array_to_wav_produces_valid_mono_16bit_wav() -> None:
     data = _array_to_wav(np.zeros(2400, dtype=np.float32), 24000)
     with wave.open(io.BytesIO(data)) as wf:
@@ -53,11 +66,11 @@ def test_array_to_wav_produces_valid_mono_16bit_wav() -> None:
 
 @pytest.fixture()
 def captured_generate(service: MLXTTSService, monkeypatch: pytest.MonkeyPatch) -> list[tuple]:
-    """Replace model inference with a recorder of (voice, lang_code) per call."""
+    """Replace model inference with a recorder of (model, voice, language) per call."""
     calls: list[tuple] = []
 
-    def fake_generate_sync(text, voice, model_id, sample_rate, lang_code):
-        calls.append((voice, lang_code))
+    def fake_generate_sync(text, voice, model_id, language):
+        calls.append((model_id, voice, language))
         return b"", 0.0
 
     monkeypatch.setattr(service, "_generate_sync", fake_generate_sync)
@@ -65,50 +78,64 @@ def captured_generate(service: MLXTTSService, monkeypatch: pytest.MonkeyPatch) -
 
 
 @pytest.mark.parametrize(
-    ("text", "voice", "language", "expected"),
+    ("text", "model", "voice", "language", "expected"),
     [
-        # An English voice can't read kana/Han/Devanagari: switch language and voice.
-        ("こんにちは、今日はいい天気ですね。", "af_heart", None, ("jf_alpha", "j")),
-        ("你好，今天天气很好。", "af_heart", None, ("zf_xiaobei", "z")),
-        ("नमस्ते, आप कैसे हैं?", "af_heart", None, ("hf_alpha", "h")),
+        # An English Kokoro voice can't read kana/Han/Devanagari: switch language and voice.
+        ("こんにちは、いい天気ですね。", KOKORO, "af_heart", None, (KOKORO, "jf_alpha", "ja")),
+        ("你好，今天天气很好。", KOKORO, "af_heart", None, (KOKORO, "zf_xiaobei", "zh")),
+        ("नमस्ते, आप कैसे हैं?", KOKORO, "af_heart", None, (KOKORO, "hf_alpha", "hi")),
         # Kanji-only text is ambiguous; a Japanese page hint keeps it Japanese.
-        ("東京都", "af_heart", "ja", ("jf_alpha", "j")),
+        ("東京都", KOKORO, "af_heart", "ja", (KOKORO, "jf_alpha", "ja")),
         # Latin-script languages come from the hint.
-        ("Hola, ¿cómo estás?", "af_heart", "es-MX", ("ef_dora", "e")),
-        ("Olá, tudo bem?", "af_heart", "pt-BR", ("pf_dora", "p")),
+        ("Hola, ¿cómo estás?", KOKORO, "af_heart", "es-MX", (KOKORO, "ef_dora", "es")),
+        ("Olá, tudo bem?", KOKORO, "af_heart", "pt-BR", (KOKORO, "pf_dora", "pt")),
         # A voice that already matches is kept.
-        ("こんにちは", "jm_kumo", None, ("jm_kumo", "j")),
-        ("Bonjour", "ff_siwis", None, ("ff_siwis", "f")),
+        ("こんにちは", KOKORO, "jm_kumo", None, (KOKORO, "jm_kumo", "ja")),
+        ("Bonjour", KOKORO, "ff_siwis", None, (KOKORO, "ff_siwis", "fr")),
         # US and UK English voices are interchangeable.
-        ("Hello there", "bm_george", "en-US", ("bm_george", "a")),
+        ("Hello there", KOKORO, "bm_george", "en-US", (KOKORO, "bm_george", "en-US")),
         # A few CJK characters inside English text don't flip the language.
-        ("The word 東京 means eastern capital.", "af_heart", None, ("af_heart", "a")),
-        # Unsupported hints are ignored.
-        ("Guten Tag", "af_heart", "de", ("af_heart", "a")),
+        ("The word 東京 means capital.", KOKORO, "af_heart", None, (KOKORO, "af_heart", "en-US")),
+        # German isn't in upstream Kokoro: switch to the German Kokoro fine-tune.
+        ("Guten Tag", KOKORO, "af_heart", "de", (GERMAN_VICTORIA, "df_victoria", "de")),
+        # ...and a German model asked for another language goes back to upstream Kokoro.
+        ("こんにちは", GERMAN_VICTORIA, "df_victoria", None, (KOKORO, "jf_alpha", "ja")),
+        # Tags no model speaks are ignored: the voice reads it as its own language.
+        ("Goedemorgen", KOKORO, "af_heart", "nl", (KOKORO, "af_heart", "en-US")),
+        ("Hallo", GERMAN_VICTORIA, "df_victoria", None, (GERMAN_VICTORIA, "df_victoria", "de")),
     ],
 )
-async def test_generate_resolves_language_and_voice(
-        service: MLXTTSService,
-        captured_generate: list[tuple],
-        text: str,
-        voice: str,
-        language: str | None,
-        expected: tuple[str, str],
+async def test_generate_resolves_language_model_and_voice(
+    service: MLXTTSService,
+    captured_generate: list[tuple],
+    text: str,
+    model: str,
+    voice: str,
+    language: str | None,
+    expected: tuple[str, str, str | None],
 ) -> None:
-    result = await service.generate(text, voice=voice, language=language)
+    result = await service.generate(text, voice=voice, model_id=model, language=language)
     assert captured_generate == [expected]
-    assert result.voice == expected[0]
+    assert (result.model, result.voice) == expected[:2]
 
 
 @pytest.mark.parametrize(
     ("tag", "expected"),
-    [("en-GB", "b"), ("en_us", "a"), ("EN", "a"), ("zh-Hant-TW", "z"), ("ko", None), ("", None)],
+    [
+        ("en-GB", "en-GB"),
+        ("en_us", "en-US"),
+        ("EN", "en-US"),
+        ("zh-Hant-TW", "zh"),
+        ("cmn", "zh"),
+        ("de-AT", "de"),
+        ("th", None),
+        ("", None),
+    ],
 )
-def test_lang_code_from_tag(tag: str, expected: str | None) -> None:
-    assert _lang_code_from_tag(tag) == expected
+def test_language_from_tag(tag: str, expected: str | None) -> None:
+    assert _language_from_tag(tag) == expected
 
 
-@pytest.mark.skipif(not _MLX_AVAILABLE, reason="mlx-audio not installed")
 def test_kokoro_interpolate_round_trip_keeps_length() -> None:
     import mlx.core as mx
     from mlx_audio.tts.models.kokoro import istftnet

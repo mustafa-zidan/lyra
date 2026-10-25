@@ -122,14 +122,15 @@ Synthesises speech from text and returns a WAV audio file.
 | Field      | Type   | Required | Default                          | Description                                   |
 |------------|--------|----------|----------------------------------|-----------------------------------------------|
 | `text`     | string | Yes      | -                                | Input text (1 – 5 000 characters)             |
-| `voice`    | string | No       | Server default (e.g. `af_heart`) | A voice ID from `GET /voices`                 |
+| `voice`    | string | No       | Server default (e.g. `af_heart`) | A voice ID from `GET /voices`; if omitted and the server default isn't a voice of `model`, the model's first voice is used |
 | `model`    | string | No       | Server default                   | A model ID from `GET /models`                 |
 | `language` | string | No       | -                                | BCP-47 hint, e.g. the page's `lang` (`pt-BR`) |
 | `format`   | string | No       | `"wav"`                          | Audio format, only `"wav"` supported          |
 
-The language is resolved as: Japanese/Chinese/Hindi script in `text`, then `language`, then the
-voice's language. If `voice` doesn't speak the resolved language, a voice that does is used
-instead. Unsupported `language` tags (e.g. `de`) are ignored.
+The language is resolved as: non-Latin script in `text` (Japanese, Chinese, Hindi), then
+`language`, then the voice's language. If `model` can't speak it, the first model that can is
+used instead (e.g. Kokoro → German Kokoro for `de`, and back for `ja`); if `voice` can't, a
+voice that can. `language` tags no model speaks (e.g. `nl`, `th`) are ignored.
 
 ### Response 200
 
@@ -141,7 +142,7 @@ instead. Unsupported `language` tags (e.g. `de`) are ignored.
 | `X-Audio-Duration` | Duration of the generated audio (seconds)  |
 | `X-Cached`         | `"true"` if served from cache              |
 | `X-Voice`          | Voice ID used for this response            |
-| `X-Model`          | Model ID requested (empty for the default) |
+| `X-Model`          | Model ID actually used                     |
 | `X-Language`       | Language the text was read as              |
 
 ### Response 400: Invalid voice or format

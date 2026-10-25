@@ -1,15 +1,17 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""MLX-Audio TTS service — Kokoro via the mlx-audio library (Metal, CPU or CUDA MLX backend)."""
+"""MLX-Audio TTS service — Kokoro (and German Kokoro fine-tunes) via mlx-audio (Metal, CPU or CUDA)."""
 
 import asyncio
 import concurrent.futures
 import io
+import json
 import logging
 import math
 import os
 import re
 import wave
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -75,9 +77,25 @@ def _patch_kokoro_interpolate() -> None:
     istftnet.interpolate = interpolate
 
 
+def _register_kokoro_german() -> None:
+    """Teach mlx-audio's Kokoro pipeline a German lang_code ('d' → espeak-ng 'de').
+
+    Upstream Kokoro has no German, so the pipeline rejects the code. The kikiri-tts German
+    fine-tunes are trained on espeak-ng German phonemes, which the pipeline's generic espeak
+    branch produces once the code is registered.
+    """
+    try:
+        from mlx_audio.tts.models.kokoro import pipeline
+    except ImportError:
+        return
+    pipeline.LANG_CODES.setdefault("d", "de")
+    pipeline.ALIASES.setdefault("de", "d")
+
+
 if _MLX_AVAILABLE:
     _use_unidic_lite_if_unidic_missing()
     _patch_kokoro_interpolate()
+    _register_kokoro_german()
 
 
 # ---------------------------------------------------------------------------
@@ -92,163 +110,57 @@ class AudioResult:
     cached: bool = False
     voice: str = ""
     language: str = ""
+    model: str = ""
 
 
 # ---------------------------------------------------------------------------
-# Static model / voice registry
+# Languages
 # ---------------------------------------------------------------------------
 
-# All Kokoro voices share a naming convention: the first ID character encodes
-# the language/accent and the second encodes gender (f = female, m = male),
-# e.g. "af_heart" → American-English female, "bm_george" → British-English male.
-_KOKORO_LANG_LABEL: dict[str, str] = {
-    "a": "English (US)",
-    "b": "English (UK)",
-    "j": "Japanese",
-    "z": "Chinese",
-    "e": "Spanish",
-    "f": "French",
-    "h": "Hindi",
-    "i": "Italian",
-    "p": "Portuguese",
+# Canonical language codes used throughout the service. English keeps its region because
+# Kokoro has separate US and UK G2Ps; every other language is a bare ISO 639-1 code.
+LANGUAGE_LABELS: dict[str, str] = {
+    "en-US": "English (US)",
+    "en-GB": "English (UK)",
+    "de": "German",
+    "es": "Spanish",
+    "fr": "French",
+    "hi": "Hindi",
+    "it": "Italian",
+    "ja": "Japanese",
+    "pt": "Portuguese",
+    "zh": "Chinese",
 }
 
-# BCP-47 language tag (lower-cased) → Kokoro lang_code. Region-specific tags are tried
-# before the bare language, so "en-GB" → British and any other "en-*" → American.
-_BCP47_TO_LANG_CODE: dict[str, str] = {
-    "en-gb": "b",
-    "en": "a",
-    "ja": "j",
-    "zh": "z",
-    "cmn": "z",
-    "es": "e",
-    "fr": "f",
-    "hi": "h",
-    "it": "i",
-    "pt": "p",
-}
+_ENGLISH = {"en-US", "en-GB"}
+
+# Deprecated or macro-language tags that browsers and pages still emit.
+_TAG_ALIASES: dict[str, str] = {"cmn": "zh"}
 
 # Scripts that identify a language on their own, whatever voice the user picked.
-_KANA_RE = re.compile(r"[\u3040-\u30ff\u31f0-\u31ff\uff66-\uff9f]")
-_HAN_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
-_DEVANAGARI_RE = re.compile(r"[\u0900-\u097f]")
-_LATIN_RE = re.compile(r"[A-Za-z\u00c0-\u024f]")
+_KANA_RE = re.compile(r"[぀-ヿㇰ-ㇿｦ-ﾟ]")
+_HAN_RE = re.compile(r"[㐀-䶿一-鿿豈-﫿]")
+_DEVANAGARI_RE = re.compile(r"[ऀ-ॿ]")
+_LATIN_RE = re.compile(r"[A-Za-zÀ-ɏ]")
 
 # Kokoro's pipeline only splits non-English text on ".!?" and truncates past 510 phonemes,
 # so also split on CJK and Devanagari sentence marks.
-_SPLIT_PATTERN = r"\n+|(?<=[。！？｡।])"
-
-_GENDER_LABEL: dict[str, str] = {"f": "Female", "m": "Male"}
-
-# The 54 Kokoro preset voices, shared across every Kokoro variant.
-_KOKORO_VOICES: list[dict[str, str]] = [
-    # American English
-    {"id": "af_heart", "name": "Heart"},
-    {"id": "af_bella", "name": "Bella"},
-    {"id": "af_nova", "name": "Nova"},
-    {"id": "af_sky", "name": "Sky"},
-    {"id": "af_aurora", "name": "Aurora"},
-    {"id": "af_jessica", "name": "Jessica"},
-    {"id": "af_kore", "name": "Kore"},
-    {"id": "af_nicole", "name": "Nicole"},
-    {"id": "af_sarah", "name": "Sarah"},
-    {"id": "af_valley", "name": "Valley"},
-    {"id": "am_adam", "name": "Adam"},
-    {"id": "am_echo", "name": "Echo"},
-    {"id": "am_eric", "name": "Eric"},
-    {"id": "am_fenrir", "name": "Fenrir"},
-    {"id": "am_liam", "name": "Liam"},
-    {"id": "am_michael", "name": "Michael"},
-    {"id": "am_onyx", "name": "Onyx"},
-    {"id": "am_puck", "name": "Puck"},
-    # British English
-    {"id": "bf_alice", "name": "Alice"},
-    {"id": "bf_emma", "name": "Emma"},
-    {"id": "bf_isabella", "name": "Isabella"},
-    {"id": "bf_lily", "name": "Lily"},
-    {"id": "bm_daniel", "name": "Daniel"},
-    {"id": "bm_fable", "name": "Fable"},
-    {"id": "bm_george", "name": "George"},
-    {"id": "bm_lewis", "name": "Lewis"},
-    # Japanese
-    {"id": "jf_alpha", "name": "Alpha"},
-    {"id": "jf_gongitsune", "name": "Gongitsune"},
-    {"id": "jf_nezumi", "name": "Nezumi"},
-    {"id": "jf_tebukuro", "name": "Tebukuro"},
-    {"id": "jm_kumo", "name": "Kumo"},
-    # Mandarin Chinese
-    {"id": "zf_xiaobei", "name": "Xiaobei"},
-    {"id": "zf_xiaoni", "name": "Xiaoni"},
-    {"id": "zf_xiaoxiao", "name": "Xiaoxiao"},
-    {"id": "zf_xiaoyi", "name": "Xiaoyi"},
-    {"id": "zm_yunxi", "name": "Yunxi"},
-    {"id": "zm_yunye", "name": "Yunye"},
-    {"id": "zm_yunfeng", "name": "Yunfeng"},
-    {"id": "zm_yunjian", "name": "Yunjian"},
-    # Spanish
-    {"id": "ef_dora", "name": "Dora"},
-    {"id": "em_alex", "name": "Alex"},
-    # French
-    {"id": "ff_siwis", "name": "Siwis"},
-    # Hindi
-    {"id": "hf_alpha", "name": "Alpha"},
-    {"id": "hf_beta", "name": "Beta"},
-    {"id": "hm_omega", "name": "Omega"},
-    {"id": "hm_psi", "name": "Psi"},
-    # Italian
-    {"id": "if_sara", "name": "Sara"},
-    {"id": "im_nicola", "name": "Nicola"},
-    # Brazilian Portuguese
-    {"id": "pf_dora", "name": "Dora"},
-    {"id": "pm_alex", "name": "Alex"},
-]
-
-_KOKORO_LANGUAGES = ["EN", "JA", "ZH", "FR", "ES", "IT", "PT", "HI"]
-
-MODELS: dict[str, dict[str, Any]] = {
-    "mlx-community/Kokoro-82M-bf16": {
-        "name": "Kokoro 82M",
-        "description": "Fast multilingual TTS with 54 preset voices — best quality",
-        "load_kwargs": {},
-        "languages": _KOKORO_LANGUAGES,
-        "sample_rate": 24000,
-        "voices": _KOKORO_VOICES,
-    },
-    "mlx-community/Kokoro-82M-8bit": {
-        "name": "Kokoro 82M (8-bit)",
-        "description": "Same 54 voices, 8-bit quantized — faster and smaller",
-        "load_kwargs": {},
-        "languages": _KOKORO_LANGUAGES,
-        "sample_rate": 24000,
-        "voices": _KOKORO_VOICES,
-    },
-    "mlx-community/Kokoro-82M-4bit": {
-        "name": "Kokoro 82M (4-bit)",
-        "description": "Same 54 voices, 4-bit quantized — lightest and fastest",
-        "load_kwargs": {},
-        "languages": _KOKORO_LANGUAGES,
-        "sample_rate": 24000,
-        "voices": _KOKORO_VOICES,
-    },
-}
+_KOKORO_SPLIT_PATTERN = r"\n+|(?<=[。！？｡।])"
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _lang_code_from_tag(tag: str | None) -> str | None:
-    """Map a BCP-47 tag (e.g. 'ja', 'pt-BR', 'en-GB') to a Kokoro lang_code, or None."""
+def _language_from_tag(tag: str | None) -> str | None:
+    """Map a BCP-47 tag (e.g. 'ja', 'pt-BR', 'en-GB') to a canonical language code, or None."""
     if not tag:
         return None
-    tag = tag.strip().lower().replace("_", "-")
-    parts = tag.split("-")
-    return _BCP47_TO_LANG_CODE.get("-".join(parts[:2])) or _BCP47_TO_LANG_CODE.get(parts[0])
+    parts = tag.strip().lower().replace("_", "-").split("-")
+    if parts[0] == "en":
+        return "en-GB" if len(parts) > 1 and parts[1] in ("gb", "uk") else "en-US"
+    code = _TAG_ALIASES.get(parts[0], parts[0])
+    return code if code in LANGUAGE_LABELS else None
 
 
-def _detect_script_lang(text: str) -> str | None:
-    """Kokoro lang_code implied by the text's script (kana, Han, Devanagari), or None.
+def _detect_script_language(text: str) -> str | None:
+    """Language implied by the text's script (kana, Han, Devanagari), or None.
 
     Only scripts that outnumber Latin letters count, so an English sentence quoting a
     Chinese name stays English. Latin-script languages can't be told apart this way.
@@ -258,36 +170,224 @@ def _detect_script_lang(text: str) -> str | None:
     han = len(_HAN_RE.findall(text))
     devanagari = len(_DEVANAGARI_RE.findall(text))
     if kana and kana + han > latin:
-        return "j"
-    if han > latin:
-        return "z"
+        return "ja"
+    if han > latin and han >= devanagari:
+        return "zh"
     if devanagari > latin:
-        return "h"
+        return "hi"
     return None
 
 
-def _resolve_lang_code(text: str, voice: str, hint: str | None) -> str:
-    """Pick the Kokoro language for ``text``: script first, then the hint, then the voice.
+def _resolve_language(text: str, hint: str | None) -> str | None:
+    """The language of ``text``: its script first, then the BCP-47 hint; None if unknown.
 
     The script wins because a voice of another language can't read it at all (kana through
     the English G2P is gibberish). Han-only text is ambiguous between Chinese and Japanese
     (e.g. a kanji heading), so a Japanese hint keeps it Japanese.
     """
-    hinted = _lang_code_from_tag(hint)
-    script = _detect_script_lang(text)
-    if script == "z" and hinted == "j":
-        return "j"
-    return script or hinted or voice[0]
+    hinted = _language_from_tag(hint)
+    script = _detect_script_language(text)
+    if script == "zh" and hinted == "ja":
+        return "ja"
+    return script or hinted
 
 
-def _voice_language(voice_id: str) -> str | None:
-    """Human-readable language for a Kokoro voice ID (1st char), or None."""
-    return _KOKORO_LANG_LABEL.get(voice_id[0]) if voice_id else None
+def _same_language(a: str | None, b: str | None) -> bool:
+    """Whether two language codes are interchangeable (US and UK English are)."""
+    return a == b or {a, b} <= _ENGLISH
 
 
-def _voice_gender(voice_id: str) -> str | None:
-    """Human-readable gender for a Kokoro voice ID (2nd char), or None."""
-    return _GENDER_LABEL.get(voice_id[1]) if len(voice_id) > 1 else None
+# ---------------------------------------------------------------------------
+# Static model / voice registry
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Voice:
+    id: str
+    name: str
+    language: str  # Canonical code of the voice's language; Kokoro voices speak only that.
+    gender: str | None
+
+
+@dataclass(frozen=True)
+class ModelSpec:
+    name: str
+    description: str
+    languages: tuple[str, ...]
+    voices: tuple[Voice, ...]
+    # Kokoro fine-tunes published only as PyTorch checkpoints: weights file and
+    # {voice id: voicepack file} in the HF repo, converted to MLX on first load.
+    pth_weights: str | None = None
+    pth_voices: dict[str, str] = field(default_factory=dict)
+
+
+# Kokoro voice IDs encode the language in the first character and the gender in the
+# second (f = female, m = male), e.g. "af_heart" → American-English female.
+_KOKORO_PREFIX_LANGUAGE: dict[str, str] = {
+    "a": "en-US",
+    "b": "en-GB",
+    "d": "de",  # Not upstream Kokoro: the kikiri-tts German fine-tunes.
+    "e": "es",
+    "f": "fr",
+    "h": "hi",
+    "i": "it",
+    "j": "ja",
+    "p": "pt",
+    "z": "zh",
+}
+# Canonical language → Kokoro lang_code (passed to the model at generation time).
+_KOKORO_LANG_CODE: dict[str, str] = {lang: p for p, lang in _KOKORO_PREFIX_LANGUAGE.items()}
+
+_GENDER_LABEL: dict[str, str] = {"f": "Female", "m": "Male"}
+
+
+def _kokoro_voices(*voices: tuple[str, str]) -> tuple[Voice, ...]:
+    return tuple(
+        Voice(vid, name, _KOKORO_PREFIX_LANGUAGE[vid[0]], _GENDER_LABEL.get(vid[1]))
+        for vid, name in voices
+    )
+
+
+# The Kokoro preset voices, shared across every Kokoro variant.
+_KOKORO_VOICES = _kokoro_voices(
+    # American English
+    ("af_heart", "Heart"),
+    ("af_bella", "Bella"),
+    ("af_nova", "Nova"),
+    ("af_sky", "Sky"),
+    ("af_aurora", "Aurora"),
+    ("af_jessica", "Jessica"),
+    ("af_kore", "Kore"),
+    ("af_nicole", "Nicole"),
+    ("af_sarah", "Sarah"),
+    ("af_valley", "Valley"),
+    ("am_adam", "Adam"),
+    ("am_echo", "Echo"),
+    ("am_eric", "Eric"),
+    ("am_fenrir", "Fenrir"),
+    ("am_liam", "Liam"),
+    ("am_michael", "Michael"),
+    ("am_onyx", "Onyx"),
+    ("am_puck", "Puck"),
+    # British English
+    ("bf_alice", "Alice"),
+    ("bf_emma", "Emma"),
+    ("bf_isabella", "Isabella"),
+    ("bf_lily", "Lily"),
+    ("bm_daniel", "Daniel"),
+    ("bm_fable", "Fable"),
+    ("bm_george", "George"),
+    ("bm_lewis", "Lewis"),
+    # Japanese
+    ("jf_alpha", "Alpha"),
+    ("jf_gongitsune", "Gongitsune"),
+    ("jf_nezumi", "Nezumi"),
+    ("jf_tebukuro", "Tebukuro"),
+    ("jm_kumo", "Kumo"),
+    # Mandarin Chinese
+    ("zf_xiaobei", "Xiaobei"),
+    ("zf_xiaoni", "Xiaoni"),
+    ("zf_xiaoxiao", "Xiaoxiao"),
+    ("zf_xiaoyi", "Xiaoyi"),
+    ("zm_yunxi", "Yunxi"),
+    ("zm_yunye", "Yunye"),
+    ("zm_yunfeng", "Yunfeng"),
+    ("zm_yunjian", "Yunjian"),
+    # Spanish
+    ("ef_dora", "Dora"),
+    ("em_alex", "Alex"),
+    # French
+    ("ff_siwis", "Siwis"),
+    # Hindi
+    ("hf_alpha", "Alpha"),
+    ("hf_beta", "Beta"),
+    ("hm_omega", "Omega"),
+    ("hm_psi", "Psi"),
+    # Italian
+    ("if_sara", "Sara"),
+    ("im_nicola", "Nicola"),
+    # Brazilian Portuguese
+    ("pf_dora", "Dora"),
+    ("pm_alex", "Alex"),
+)
+_KOKORO_LANGUAGES = ("en-US", "en-GB", "ja", "zh", "es", "fr", "hi", "it", "pt")
+
+# Order matters: when the requested model can't speak a language, the first model here that
+# can is used.
+MODELS: dict[str, ModelSpec] = {
+    "mlx-community/Kokoro-82M-bf16": ModelSpec(
+        name="Kokoro 82M",
+        description="Fast multilingual TTS with 50 preset voices — best quality",
+        languages=_KOKORO_LANGUAGES,
+        voices=_KOKORO_VOICES,
+    ),
+    "mlx-community/Kokoro-82M-8bit": ModelSpec(
+        name="Kokoro 82M (8-bit)",
+        description="Same 50 voices, 8-bit quantized — faster and smaller",
+        languages=_KOKORO_LANGUAGES,
+        voices=_KOKORO_VOICES,
+    ),
+    "mlx-community/Kokoro-82M-4bit": ModelSpec(
+        name="Kokoro 82M (4-bit)",
+        description="Same 50 voices, 4-bit quantized — lightest and fastest",
+        languages=_KOKORO_LANGUAGES,
+        voices=_KOKORO_VOICES,
+    ),
+    "kikiri-tts/kikiri-german-victoria": ModelSpec(
+        name="Kokoro 82M German (Victoria)",
+        description="Community German fine-tune of Kokoro (kikiri-tts), female voice",
+        languages=("de",),
+        voices=_kokoro_voices(("df_victoria", "Victoria")),
+        pth_weights="kikiri_german_victoria_ep10.pth",
+        pth_voices={"df_victoria": "voices/victoria.pt"},
+    ),
+    "kikiri-tts/kikiri-german-martin": ModelSpec(
+        name="Kokoro 82M German (Martin)",
+        description="Community German fine-tune of Kokoro (kikiri-tts), male voice",
+        languages=("de",),
+        voices=_kokoro_voices(("dm_martin", "Martin")),
+        pth_weights="kikiri_german_martin_ep10.pth",
+        pth_voices={"dm_martin": "voices/martin.pt"},
+    ),
+}
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _speaks(spec: ModelSpec, language: str) -> bool:
+    return any(_same_language(language, lang) for lang in spec.languages)
+
+
+def _pick_model(requested: str, language: str | None) -> str:
+    """``requested`` if it speaks ``language``; else the first model that does. Falls back
+    to ``requested`` when no model speaks it."""
+    if language is None or _speaks(MODELS[requested], language):
+        return requested
+    return next((mid for mid, spec in MODELS.items() if _speaks(spec, language)), requested)
+
+
+def _pick_voice(spec: ModelSpec, voice: str, language: str | None, default: str) -> str:
+    """Keep ``voice`` if it's in ``spec`` and can speak ``language``; otherwise pick one.
+
+    Prefers the server default voice, then the first voice native to ``language``, then the
+    model's first voice.
+    """
+    by_id = {v.id: v for v in spec.voices}
+
+    def fits(vid: str) -> bool:
+        v = by_id.get(vid)
+        return v is not None and (language is None or _same_language(v.language, language))
+
+    if fits(voice):
+        return voice
+    if default in by_id and (language is None or _same_language(by_id[default].language, language)):
+        return default
+    native = [v.id for v in spec.voices if language and _same_language(v.language, language)]
+    return native[0] if native else spec.voices[0].id
 
 
 def _array_to_wav(audio: np.ndarray, sample_rate: int) -> bytes:
@@ -303,18 +403,50 @@ def _array_to_wav(audio: np.ndarray, sample_rate: int) -> bytes:
     return buf.getvalue()
 
 
-def _voice_for_lang(lang_code: str, voice: str, voices: list[dict[str, str]], default: str) -> str:
-    """Keep ``voice`` if it speaks ``lang_code``; otherwise pick one that does.
+def _convert_kokoro_pth(repo_id: str, spec: ModelSpec, cache_dir: Path) -> Path:
+    """Convert a PyTorch Kokoro checkpoint from the HF hub into an mlx-audio model directory.
 
-    American and British English voices are interchangeable. Prefers the server default
-    voice, then the first voice of that language in the registry.
+    The checkpoint is ``{component: state_dict}`` like upstream ``kokoro-v1_0.pth``, but with
+    DataParallel ``module.`` prefixes and PyTorch's newer weight-norm parametrization names.
+    Kokoro's ``sanitize()`` handles the remaining PyTorch → MLX layout differences at load.
+    ``config.json`` is written last, so its presence marks a finished conversion.
     """
-    english = {"a", "b"}
-    if voice[0] == lang_code or {voice[0], lang_code} <= english:
-        return voice
-    if default and default[0] == lang_code:
-        return default
-    return next((v["id"] for v in voices if v["id"][0] == lang_code), voice)
+    out = cache_dir / "models" / repo_id.replace("/", "--")
+    if (out / "config.json").exists():
+        return out
+
+    import mlx.core as mx
+    import torch
+    from huggingface_hub import hf_hub_download
+
+    logger.info("Converting %s to MLX in %s …", repo_id, out)
+    (out / "voices").mkdir(parents=True, exist_ok=True)
+    checkpoint = torch.load(
+        hf_hub_download(repo_id, spec.pth_weights), map_location="cpu", weights_only=True
+    )
+    weights: dict[str, Any] = {}
+    for component, state_dict in checkpoint.items():
+        for key, tensor in state_dict.items():
+            key = f"{component}.{key.removeprefix('module.')}"
+            key = key.replace(".parametrizations.weight.original0", ".weight_g")
+            key = key.replace(".parametrizations.weight.original1", ".weight_v")
+            weights[key] = mx.array(tensor.float().numpy())
+    mx.save_safetensors(str(out / "model.safetensors"), weights)
+
+    for voice_id, filename in spec.pth_voices.items():
+        pack = torch.load(hf_hub_download(repo_id, filename), map_location="cpu", weights_only=True)
+        mx.save_safetensors(
+            str(out / "voices" / f"{voice_id}.safetensors"),
+            {"voice": mx.array(pack.float().numpy())},
+        )
+
+    # The fine-tunes reuse upstream Kokoro's architecture and phoneme vocabulary.
+    with open(hf_hub_download("hexgrad/Kokoro-82M", "config.json")) as f:
+        config = json.load(f)
+    config["model_type"] = "kokoro"
+    with open(out / "config.json", "w") as f:
+        json.dump(config, f)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -363,7 +495,8 @@ class MLXTTSService:
 
     @property
     def provider_name(self) -> str | None:
-        return MODELS.get(self._settings.mlx_model, {}).get("name", "mlx-audio")
+        spec = MODELS.get(self._settings.mlx_model)
+        return spec.name if spec else "mlx-audio"
 
     # ------------------------------------------------------------------
     # Catalogue
@@ -374,27 +507,28 @@ class MLXTTSService:
         return [
             {
                 "id": mid,
-                "name": info["name"],
-                "description": info["description"],
-                "languages": info["languages"],
+                "name": spec.name,
+                "description": spec.description,
+                "languages": list(spec.languages),
                 "default": mid == default_id,
             }
-            for mid, info in MODELS.items()
+            for mid, spec in MODELS.items()
         ]
 
     def list_voices(self, model_id: str | None = None) -> list[dict[str, Any]]:
-        mid = model_id or self._settings.mlx_model
-        info = MODELS.get(mid, {})
+        spec = MODELS.get(model_id or self._settings.mlx_model)
+        if spec is None:
+            return []
         default_voice = self._settings.mlx_default_voice
         return [
             {
-                "id": v["id"],
-                "name": v["name"],
-                "language": _voice_language(v["id"]),
-                "gender": _voice_gender(v["id"]),
-                "default": v["id"] == default_voice,
+                "id": v.id,
+                "name": v.name,
+                "language": LANGUAGE_LABELS[v.language],
+                "gender": v.gender,
+                "default": v.id == default_voice,
             }
-            for v in info.get("voices", [])
+            for v in spec.voices
         ]
 
     # ------------------------------------------------------------------
@@ -410,28 +544,43 @@ class MLXTTSService:
     ) -> AudioResult:
         """Synthesize ``text``; ``language`` is an optional BCP-47 hint (e.g. the page lang).
 
-        The voice is swapped for one of the resolved language when it doesn't match; the
-        voice actually used is reported in the result.
+        The language comes from the text's script, then ``language``, then the voice. If the
+        model can't speak it, the first model that can is used; if the voice can't, a voice
+        that can. The model and voice actually used are reported in the result.
         """
         mid = model_id or self._settings.mlx_model
-        v = voice or self._settings.mlx_default_voice
         # ValueError is mapped to HTTP 400 by the route.
         if mid not in MODELS:
             raise ValueError(f"Invalid model: '{mid}'. Valid models: {', '.join(MODELS)}")
-        valid_voices = [entry["id"] for entry in MODELS[mid]["voices"]]
-        if v not in valid_voices:
-            raise ValueError(f"Invalid voice: '{v}'. Valid voices: {', '.join(valid_voices)}")
-        sample_rate: int = MODELS[mid]["sample_rate"]
+        valid_voices = [entry.id for entry in MODELS[mid].voices]
+        if not voice:
+            # The configured default may not belong to the model (e.g. a German fine-tune).
+            default_voice = self._settings.mlx_default_voice
+            v = default_voice if default_voice in valid_voices else valid_voices[0]
+        elif voice in valid_voices:
+            v = voice
+        else:
+            raise ValueError(f"Invalid voice: '{voice}'. Valid voices: {', '.join(valid_voices)}")
 
-        lang_code = _resolve_lang_code(text, v, language)
-        v = _voice_for_lang(lang_code, v, MODELS[mid]["voices"], self._settings.mlx_default_voice)
+        lang = _resolve_language(text, language)
+        mid = _pick_model(mid, lang)
+        spec = MODELS[mid]
+        default = self._settings.mlx_default_voice
+        v = _pick_voice(spec, v, lang, default)
+        if lang is None or not _speaks(spec, lang):
+            # Unknown (or unspeakable) language: read it as the voice's own language.
+            lang = next(entry.language for entry in spec.voices if entry.id == v)
 
         loop = asyncio.get_event_loop()
         wav_bytes, duration = await loop.run_in_executor(
-            self._executor, self._generate_sync, text, v, mid, sample_rate, lang_code
+            self._executor, self._generate_sync, text, v, mid, lang
         )
         return AudioResult(
-            audio_data=wav_bytes, duration=duration, voice=v, language=_KOKORO_LANG_LABEL[lang_code]
+            audio_data=wav_bytes,
+            duration=duration,
+            voice=v,
+            language=LANGUAGE_LABELS[lang],
+            model=mid,
         )
 
     # ------------------------------------------------------------------
@@ -441,8 +590,11 @@ class MLXTTSService:
     def _load_model(self, model_id: str) -> Any:
         if model_id not in self._loaded:
             logger.info("Loading MLX model %s …", model_id)
-            load_kwargs = MODELS.get(model_id, {}).get("load_kwargs", {})
-            self._loaded[model_id] = _mlx_load_model(model_id, **load_kwargs)
+            spec = MODELS[model_id]
+            source: str | Path = model_id
+            if spec.pth_weights:
+                source = _convert_kokoro_pth(model_id, spec, self._settings.cache_dir)
+            self._loaded[model_id] = _mlx_load_model(source)
         return self._loaded[model_id]
 
     def _generate_sync(
@@ -450,18 +602,15 @@ class MLXTTSService:
         text: str,
         voice: str,
         model_id: str,
-        sample_rate: int,
-        lang_code: str,
+        language: str,
     ) -> tuple[bytes, float]:
         model = self._load_model(model_id)
-
-        kwargs: dict[str, Any] = {"voice": voice, "lang_code": lang_code}
-        if lang_code not in ("a", "b"):
-            kwargs["split_pattern"] = _SPLIT_PATTERN
+        spec = MODELS[model_id]
+        sample_rate = int(getattr(model, "sample_rate", 24000))
 
         chunks: list[np.ndarray] = []
         try:
-            for result in model.generate(text, **kwargs):
+            for result in self._run_kokoro(model, spec, model_id, text, voice, language):
                 chunks.append(np.array(result.audio))
         except SystemExit as exc:
             # spaCy's auto-download calls `pip install` internally, which fails in uv
@@ -474,3 +623,23 @@ class MLXTTSService:
         audio = np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.float32)
         duration = float(len(audio)) / sample_rate
         return _array_to_wav(audio, sample_rate), duration
+
+    def _run_kokoro(
+        self,
+        model: Any,
+        spec: ModelSpec,
+        model_id: str,
+        text: str,
+        voice: str,
+        language: str,
+    ) -> Any:
+        """Yield mlx-audio Kokoro results (each with ``.audio``)."""
+        voice_arg = voice
+        if spec.pth_weights:
+            # Converted voicepacks live next to the model, not in an HF repo.
+            cache = self._settings.cache_dir / "models" / model_id.replace("/", "--")
+            voice_arg = str(cache / "voices" / f"{voice}.safetensors")
+        kwargs: dict[str, Any] = {"voice": voice_arg, "lang_code": _KOKORO_LANG_CODE[language]}
+        if language not in _ENGLISH:
+            kwargs["split_pattern"] = _KOKORO_SPLIT_PATTERN
+        yield from model.generate(text, **kwargs)

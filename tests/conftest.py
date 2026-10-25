@@ -12,7 +12,7 @@ from server.core.config import Settings
 from server.core.mlx_tts_service import AudioResult, MLXTTSService
 
 
-def _make_fake_audio(voice: str = "af_heart") -> AudioResult:
+def _make_fake_audio(voice: str = "af_heart", model: str = "") -> AudioResult:
     # Minimal valid WAV: 44-byte header + 2 bytes silence
     wav_header = (
         b"RIFF"
@@ -30,7 +30,9 @@ def _make_fake_audio(voice: str = "af_heart") -> AudioResult:
         + (2).to_bytes(4, "little")
         + b"\x00\x00"
     )
-    return AudioResult(audio_data=wav_header, duration=0.001, cached=False, voice=voice)
+    return AudioResult(
+        audio_data=wav_header, duration=0.001, cached=False, voice=voice, model=model
+    )
 
 
 @pytest.fixture()
@@ -62,7 +64,7 @@ def mock_tts_service(settings_override: Settings) -> Iterator[MagicMock]:
         v = voice or settings_override.mlx_default_voice
         if v not in {entry["id"] for entry in real.list_voices(mid)}:
             raise ValueError(f"Invalid voice: '{v}'")
-        return _make_fake_audio(v)
+        return _make_fake_audio(v, mid)
 
     svc.generate = AsyncMock(side_effect=mock_generate)
     svc.startup = AsyncMock()

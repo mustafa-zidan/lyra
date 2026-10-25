@@ -19,6 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 # macOS on Apple Silicon: mlx pulls in mlx-metal (GPU via Metal).
 apple = [
+    "torch; sys_platform == 'darwin' and platform_machine == 'arm64'",
     "mlx-audio; sys_platform == 'darwin' and platform_machine == 'arm64'",
     "misaki[en,ja,zh]; sys_platform == 'darwin' and platform_machine == 'arm64'",
     "unidic-lite; sys_platform == 'darwin' and platform_machine == 'arm64'",
@@ -69,8 +70,8 @@ conflicts = [
     [{ extra = "linux-cpu" }, { extra = "linux-cuda" }],
 ]
 
-# torch is only a transitive dep of misaki[en] (via spacy-curated-transformers) and is not
-# used for Kokoro inference. On Linux PyPI ships the multi-GB CUDA build, so use CPU wheels.
+# torch comes in via misaki[en] (spacy-curated-transformers) and is used only to convert the
+# German Kokoro .pth checkpoints to MLX, never for inference. On Linux PyPI ships the multi-GB CUDA build, so use CPU wheels.
 [tool.uv.sources]
 torch = { index = "pytorch-cpu", marker = "sys_platform == 'linux'" }
 

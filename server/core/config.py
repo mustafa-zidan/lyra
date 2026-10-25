@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Application configuration loaded from environment variables."""
 
+from pathlib import Path
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -21,6 +23,9 @@ class Settings(BaseSettings):
     # mlx-audio (Kokoro) TTS settings
     mlx_model: str = "mlx-community/Kokoro-82M-bf16"
     mlx_default_voice: str = "af_heart"
+
+    # Where models converted at runtime (the PyTorch-only German Kokoro fine-tunes) are kept
+    cache_dir: Path = Path.home() / ".cache" / "lyra"
 
     # CORS: comma-separated list of allowed origins, or "*" for all
     cors_origins: str = "*"

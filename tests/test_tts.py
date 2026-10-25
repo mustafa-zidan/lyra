@@ -16,6 +16,7 @@ def test_generate_returns_wav(client: TestClient) -> None:
     assert "X-Voice" in response.headers
     assert "X-Cached" in response.headers
     assert response.headers["X-Voice"] == "af_heart"
+    assert response.headers["X-Model"] == "mlx-community/Kokoro-82M-bf16"
     assert len(response.content) > 0
 
 

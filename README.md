@@ -17,7 +17,7 @@ Lyra Server  (FastAPI)
         │
         │  Python API
         ▼
-mlx-audio  (Kokoro-82M, 50 voices, 9 languages)
+mlx-audio  (Kokoro-82M, German Kokoro fine-tunes)
 ```
 
 ---
@@ -53,21 +53,36 @@ Command Line Tools on macOS, `build-essential cmake` on Debian/Ubuntu.
 Without a platform extra the server still starts, but `/health` reports `degraded` and
 `/tts/generate` returns 503. CI runs this way, with the TTS service mocked.
 
-### Languages
+### Models and languages
 
-Every Kokoro language is supported: English (US/UK), Japanese, Mandarin Chinese, Spanish,
-French, Hindi, Italian and Brazilian Portuguese. English goes through misaki's English G2P,
-Japanese and Chinese through `misaki[ja]` / `misaki[zh]`, and the rest through espeak-ng.
+| Model (`GET /models` id)                                   | Languages                                                                                     | Voices                                   | Download |
+|------------------------------------------------------------|-----------------------------------------------------------------------------------------------|------------------------------------------|----------|
+| Kokoro 82M (`mlx-community/Kokoro-82M-bf16`, `-8bit`, `-4bit`) | English (US/UK), Japanese, Chinese, Spanish, French, Hindi, Italian, Portuguese            | 50 presets, each tied to its language    | ~0.3 GB  |
+| Kokoro 82M German (`kikiri-tts/kikiri-german-victoria`, `-martin`) | German                                                                                | Victoria, Martin                         | ~0.3 GB  |
 
-The server picks the language for each request, so you don't have to switch voices by hand:
+Models are downloaded from Hugging Face on first use. The German Kokoro fine-tunes
+([kikiri-tts](https://huggingface.co/kikiri-tts), Apache-2.0) are published only as PyTorch
+checkpoints, so the server converts them to MLX once, into `EURYDICE_CACHE_DIR`
+(default `~/.cache/lyra`).
 
-1. Text in Japanese (kana), Chinese (Han) or Hindi (Devanagari) script is detected from the
-   text itself.
+Kokoro reads English through misaki's English G2P, Japanese and Chinese through
+`misaki[ja]` / `misaki[zh]`, and the rest (German included) through espeak-ng.
+
+The server picks the language for each request, so you don't have to switch voices or models
+by hand:
+
+1. Text in a non-Latin script (Japanese, Chinese, Hindi) is detected from the text itself.
 2. Otherwise the extension's page language (the nearest `lang` attribute) is used.
 3. Otherwise the selected voice's language.
 
-If the selected voice doesn't speak that language, the server uses a voice that does (your
-default voice if it matches, else the first voice of that language) and reports it in `X-Voice`.
+If the selected model can't speak that language, the first model in the table that can is used
+instead: with Kokoro selected, German goes to German Kokoro (Victoria), and with a German model
+selected, other languages go back to Kokoro 82M. That model is downloaded (and, for German,
+converted) on the spot, so the first such request can take a while. Languages no model speaks
+are read as the voice's own language. If the
+voice can't speak the language, the server uses one that can (your default voice if it fits,
+else the first voice native to it). Responses report what was used in `X-Model`, `X-Voice` and
+`X-Language`.
 
 Japanese uses the bundled `unidic-lite` dictionary. For the full UniDic (~500 MB, slightly
 better readings) run `uv run python -m unidic download`; it's picked up automatically.
@@ -129,11 +144,14 @@ Environment variables (prefix: `EURYDICE_`):
 EURYDICE_HOST=127.0.0.1
 EURYDICE_PORT=8000
 
-# Default model: mlx-community/Kokoro-82M-bf16 | Kokoro-82M-8bit | Kokoro-82M-4bit
+# Default model (see GET /models or the table above), loaded at startup
 EURYDICE_MLX_MODEL=mlx-community/Kokoro-82M-bf16
 
 # Default voice (see GET /voices), e.g. af_heart, am_adam, bf_emma, bm_george
 EURYDICE_MLX_DEFAULT_VOICE=af_heart
+
+# Where runtime-converted models (German Kokoro) are stored
+EURYDICE_CACHE_DIR=~/.cache/lyra
 
 # CORS origins (comma-separated, or * for all)
 EURYDICE_CORS_ORIGINS=*
