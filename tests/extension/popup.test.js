@@ -36,7 +36,7 @@ test.describe('Popup UI', () => {
   test('voice select is populated from the server', async () => {
     const voiceSelect = popupPage.locator('#voice-select');
     const optionCount = await voiceSelect.locator('option').count();
-    expect(optionCount).toBeGreaterThanOrEqual(2); // mock returns leo + tara
+    expect(optionCount).toBeGreaterThanOrEqual(2); // mock returns af_heart + bm_george
   });
 
   test('read-selection button is enabled after voices load', async () => {

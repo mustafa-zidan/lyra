@@ -67,6 +67,52 @@
   has no voices for them and mlx-audio's pipeline rejects those lang codes; optional per-language voice preferences in
   the options page.
 
+- [x] Add German and more languages via new models. (1) kikiri-tts German Kokoro fine-tunes (Victoria, Martin;
+  Apache-2.0): Kokoro-format `.pth` converted to MLX on first load into `EURYDICE_CACHE_DIR` (`module.` prefix
+  stripped, `parametrizations.weight.original0/1` → `weight_g/weight_v`; key set and shapes identical to upstream);
+  German lang_code `d` → espeak `de` registered in mlx-audio's pipeline. Kerstin skipped: only raw training
+  checkpoints. (2) Chatterbox multilingual: `mlx-community/chatterbox-8bit`/`-fp16` (not `chatterbox-multilingual-v3`,
+  which lacks `conds.safetensors` and so has no built-in voice); text split into ≤300-char sentence groups since one
+  call caps at ~40 s. Added `pykakasi` + `spacy-pkuseg` (its ja/zh preprocessing silently skips without them).
+  (3) Qwen3-TTS CustomVoice 0.6B/1.7B 8-bit, 9 cross-lingual speakers. Registry generalized into `ModelSpec` families
+  with canonical language codes; script detection extended to Hangul/Cyrillic/Arabic/Hebrew/Greek; when the requested
+  model can't speak the language, the first model that can is used (same family first) and reported in `X-Model`.
+  Verified: synthesis on every path, transcribed with Whisper large-v3-turbo — German from all four models verbatim,
+  Korean/Russian (Qwen3), Dutch/Chinese/Japanese/Turkish/Arabic (Chatterbox) correct, all earlier Kokoro languages
+  correct. Live server smoke test over HTTP; 46 pytest; ruff clean. Learned: Whisper translates short clips when it
+  misdetects the language (Arabic looked like English output until the language was forced). Follow-ups: Hebrew and
+  Greek on Chatterbox 8-bit are poor (recognisable only with forced language) — try fp16; Chatterbox/Qwen3 voice
+  cloning from reference audio; loaded models are never evicted, so cross-family fallback grows memory.
+
+- [x] Extension follow-ups for the multi-model server. (1) No more hardcoded `af_heart`: the background worker and
+  options Test sound leave `voice` out when empty, and the server then uses its default voice if it belongs to the
+  model, else the model's first (an explicit unknown voice is still 400). (2) Status bar shows what was used per chunk
+  from `X-Language`/`X-Model` ("Reading aloud · Dutch · Chatterbox Multilingual (8-bit)"; model only when the server
+  switched), and "Loading model… the first use downloads it" when a chunk takes over 8 s; the options Test sound shows
+  the same hint. `X-Language` added to CORS `expose_headers`. (3) Model labels in options summarise long language
+  lists ("23 languages", codes → names via `Intl.DisplayNames`), full list in the tooltip. Verified: 49 pytest, ruff
+  clean, typecheck/eslint clean, 7 browserless extension tests pass, live server returns 200 with voice `vivian` for
+  a voiceless Qwen3 request and exposes `X-Language`. Not verified: the 16 Playwright browser tests (Chromium still
+  not installed), so the status bar wording hasn't been seen in a real browser.
+
+- [x] Remove Chatterbox and Qwen3-TTS (user judged both too low quality). Kokoro 82M and the German Kokoro fine-tunes
+  are the only models again: dropped the `family`/`cross_lingual` registry fields, Chatterbox segmenting
+  (`_split_sentences`), Qwen3 "Auto" language, Hangul/Cyrillic/Arabic/Hebrew/Greek script detection and the
+  Chatterbox-only `pykakasi` + `spacy-pkuseg` deps. Kept from the extension follow-ups: voiceless requests (German
+  models don't have `af_heart`), the status bar language/model label and slow-load hint, summarised model labels.
+  Languages Kokoro doesn't speak (Korean, Russian, Dutch, Arabic, …) are read as the voice's own language again.
+  Verified: 43 pytest, ruff clean, typecheck/eslint clean, 7 browserless extension tests. Follow-up: the downloaded
+  Chatterbox/Qwen3 weights in `~/.cache/huggingface/hub` were deleted (~7.4 GB).
+
+- [x] Fix the CI pipeline (red on every push since June). Causes: (1) Prettier flagged five `src/` files, now
+  formatted (whitespace-only commit); (2) `uv.lock` was gitignored, so CI resolved the newest ruff (0.17.2) instead of
+  the local 0.15.20 and its formatter disagreed; the lockfile is now committed; (3) once the job got past Prettier,
+  the popup voice test failed because the mock server matched `req.url === '/voices'` exactly while the extension
+  requests `/voices?model=…`; the mock now routes on the path, serves Kokoro-shaped voices and `/models`, and sends
+  `X-Model`/`X-Language`. Verified locally: all 23 Playwright tests (16 in a real Chromium), 43 pytest, ruff 0.15.20
+  and 0.17.2 clean, Prettier/ESLint/typecheck clean. Learned: the local Playwright Chromium 1208 was a broken partial
+  extraction, so locally it is symlinked to the complete 1248 build (machine-only workaround).
+
 ## Notes
 
 - Reflection/verification: implemented cross-tab playback ownership, pending content-script audio resolution on stop,

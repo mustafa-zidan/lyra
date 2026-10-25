@@ -11,9 +11,6 @@ dist/
 build/
 .eggs/
 
-# uv
-uv.lock
-
 # Environment
 .env
 .env.*

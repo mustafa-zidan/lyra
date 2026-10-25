@@ -44,7 +44,7 @@ export const test = base.extend({
     await context.addInitScript(
       ({ url }) => {
         if (typeof chrome !== 'undefined' && chrome.storage) {
-          chrome.storage.local.set({ serverUrl: url, defaultVoice: 'leo' });
+          chrome.storage.local.set({ serverUrl: url, defaultVoice: 'af_heart' });
         }
       },
       { url: serverUrl },

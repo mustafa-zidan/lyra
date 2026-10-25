@@ -22,10 +22,25 @@ const WAV_STUB = Buffer.from([
   0x00,
 ]);
 
+const MODEL_ID = 'mlx-community/Kokoro-82M-bf16';
+
 const VOICES_RESPONSE = JSON.stringify({
+  model: MODEL_ID,
   voices: [
-    { id: 'leo', name: 'Leo', default: true },
-    { id: 'tara', name: 'Tara', default: false },
+    { id: 'af_heart', name: 'Heart', language: 'English (US)', gender: 'Female', default: true },
+    { id: 'bm_george', name: 'George', language: 'English (UK)', gender: 'Male', default: false },
+  ],
+});
+
+const MODELS_RESPONSE = JSON.stringify({
+  models: [
+    {
+      id: MODEL_ID,
+      name: 'Kokoro 82M',
+      description: 'Mock model',
+      languages: ['en-US', 'en-GB'],
+      default: true,
+    },
   ],
 });
 
@@ -43,24 +58,35 @@ export default async function globalSetup() {
       return;
     }
 
-    if (req.url === '/health') {
+    // The extension adds query strings (e.g. /voices?model=…), so route on the path.
+    const pathname = new URL(req.url, 'http://localhost').pathname;
+
+    if (pathname === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok', tts_available: true, provider: 'mock' }));
       return;
     }
 
-    if (req.url === '/voices') {
+    if (pathname === '/voices') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(VOICES_RESPONSE);
       return;
     }
 
-    if (req.url === '/tts/generate' && req.method === 'POST') {
+    if (pathname === '/models') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(MODELS_RESPONSE);
+      return;
+    }
+
+    if (pathname === '/tts/generate' && req.method === 'POST') {
       res.writeHead(200, {
         'Content-Type': 'audio/wav',
         'X-Audio-Duration': '0.001',
         'X-Cached': 'false',
-        'X-Voice': 'leo',
+        'X-Voice': 'af_heart',
+        'X-Model': MODEL_ID,
+        'X-Language': 'English (US)',
       });
       res.end(WAV_STUB);
       return;
