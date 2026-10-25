@@ -98,7 +98,7 @@ async function readSelection(serverUrl: string, model: string): Promise<void> {
     if (!tab?.id) return;
 
     const response = (await api.tabs.sendMessage(tab.id, {action: 'get-selection'})) as
-        | { text?: string }
+        | { text?: string; language?: string }
         | undefined;
     const text = response?.text?.trim();
     if (!text) {
@@ -108,7 +108,14 @@ async function readSelection(serverUrl: string, model: string): Promise<void> {
     }
 
     setPlaying(true);
-    await sendBackground({action: 'speak', text, voice: voiceSelect.value, serverUrl, model});
+    await sendBackground({
+        action: 'speak',
+        text,
+        voice: voiceSelect.value,
+        serverUrl,
+        model,
+        language: response?.language,
+    });
 }
 
 async function readPage(serverUrl: string, model: string): Promise<void> {
@@ -125,12 +132,13 @@ async function readPage(serverUrl: string, model: string): Promise<void> {
     const [result] = await api.scripting.executeScript({
         target: {tabId: tab.id},
         func: () => {
+            const language = document.documentElement.lang || undefined;
             const clone = document.cloneNode(true) as Document;
             try {
                 // @ts-expect-error Readability injected as global by prior executeScript
                 const article = new Readability(clone).parse();
                 if (article?.textContent?.trim()) {
-                    return article.textContent.trim();
+                    return {text: article.textContent.trim(), language: article.lang || language};
                 }
             } catch {
                 /* fall through to fallback */
@@ -140,19 +148,27 @@ async function readPage(serverUrl: string, model: string): Promise<void> {
             for (const sel of ['article', 'main', '[role="main"]']) {
                 const el = document.querySelector(sel);
                 if (el?.textContent?.trim() && el.textContent.trim().length > 100) {
-                    return el.textContent.trim();
+                    return {text: el.textContent.trim(), language};
                 }
             }
             // Last resort: full page text
-            return document.body.innerText;
+            return {text: document.body.innerText, language};
         },
     });
 
-    const text = (result?.result as string | undefined)?.trim();
+    const page = result?.result as { text?: string; language?: string } | undefined;
+    const text = page?.text?.trim();
     if (!text) return;
 
     setPlaying(true);
-    await sendBackground({action: 'speak', text, voice: voiceSelect.value, serverUrl, model});
+    await sendBackground({
+        action: 'speak',
+        text,
+        voice: voiceSelect.value,
+        serverUrl,
+        model,
+        language: page?.language,
+    });
 }
 
 async function stopPlayback(): Promise<void> {

@@ -2,13 +2,12 @@
 
 ## In Progress
 
-- [ ] Verify `linux-cpu` / `linux-cuda` extras on real Linux hosts (install + Kokoro generation incl. misaki/espeak); only dependency resolution has been checked so far
+- [ ] Verify `linux-cpu` / `linux-cuda` extras on real Linux hosts (install + Kokoro generation incl. misaki/espeak);
+  only dependency resolution has been checked so far
 
 ## To Do
 
-
 ## Backlog
-
 
 ## Done
 
@@ -37,11 +36,43 @@
 - [x] Generate a nicer icon (SVG + Playwright PNG generation script)
 - [x] Restyle the extension — black and white flat design (popup, options, status bar)
 - [x] Switch extension to TypeScript (src/ → extension/ compiled output)
-- [x] Drop eurydice-tts backend; MLX (Kokoro) is the only TTS backend (deps, config, service, tests, docs). Voice/model validation now in MLXTTSService (ValueError → 400).
-- [x] Platform extras `apple` / `linux-cpu` / `linux-cuda`. Each is marker-gated; cpu/cuda declared as a uv conflict (so `--all-extras` is unsupported); Linux torch (transitive via misaki[en] → spacy-curated-transformers, unused for inference) pinned to the PyTorch CPU index. Verified on macOS arm64: `uv sync --extra apple --extra dev`, Kokoro WAV for bm_george, ruff clean, 18 tests pass. Learned: the earlier "MLX is Apple-only" claim was wrong — mlx ships Linux cpu/cuda wheels.
-- [x] Standalone setup: install eurydice-tts>=0.2.0 from PyPI instead of `../eurydice` path source (fresh clones failed `uv sync`); verified fresh-clone `uv sync --all-extras --locked` + Kokoro generation + pytest. Note: espeak-ng fails if the venv path is very long (~160+ chars) — not an issue for normal checkouts.
-- [x] Prevent overlapping read-aloud and Test sound audio: track the active playback tab, stop prior playback across tabs, resolve pending audio on stop, and abort/release previous Test sound requests. Regenerate extension JavaScript and validate with the planned quality gates. Assumption: session ownership must prevent stale completion from clearing a newer playback session.
+- [x] Drop eurydice-tts backend; MLX (Kokoro) is the only TTS backend (deps, config, service, tests, docs). Voice/model
+  validation now in MLXTTSService (ValueError → 400).
+- [x] Platform extras `apple` / `linux-cpu` / `linux-cuda`. Each is marker-gated; cpu/cuda declared as a uv conflict (so
+  `--all-extras` is unsupported); Linux torch (transitive via misaki[en] → spacy-curated-transformers, unused for
+  inference) pinned to the PyTorch CPU index. Verified on macOS arm64: `uv sync --extra apple --extra dev`, Kokoro WAV
+  for bm_george, ruff clean, 18 tests pass. Learned: the earlier "MLX is Apple-only" claim was wrong — mlx ships Linux
+  cpu/cuda wheels.
+- [x] Standalone setup: install eurydice-tts>=0.2.0 from PyPI instead of `../eurydice` path source (fresh clones failed
+  `uv sync`); verified fresh-clone `uv sync --all-extras --locked` + Kokoro generation + pytest. Note: espeak-ng fails
+  if the venv path is very long (~160+ chars) — not an issue for normal checkouts.
+- [x] Prevent overlapping read-aloud and Test sound audio: track the active playback tab, stop prior playback across
+  tabs, resolve pending audio on stop, and abort/release previous Test sound requests. Regenerate extension JavaScript
+  and validate with the planned quality gates. Assumption: session ownership must prevent stale completion from clearing
+  a newer playback session.
+
+- [x] Support every Kokoro language (en-US/en-GB, ja, zh, es, fr, hi, it, pt). Root cause of Japanese gibberish: the
+  extension always sends the user's (English) voice, so kana went through misaki's English G2P. Implemented: platform
+  extras install `misaki[en,ja,zh]` + `unidic-lite` (misaki[ja] depends on `unidic`, which ships without its ~500 MB
+  dictionary; the service points `unidic.DICDIR` at unidic-lite unless the full one was downloaded). Server resolves the
+  language per request (Japanese/Chinese/Hindi script in the text → optional BCP-47 `language` hint → voice prefix;
+  kanji-only text + `ja` hint stays Japanese) and swaps in a matching voice (`X-Voice`, new `X-Language` header).
+  Non-English text also splits on 。！？｡। to avoid the pipeline's 510-phoneme truncation. Extension sends the nearest
+  `lang` attribute (selection button, context menu, popup selection/page) and chunks on CJK/Devanagari sentence marks.
+  Patched an mlx-audio (<= 0.6.1, still unfixed upstream) float-rounding crash in Kokoro's SineGen
+  (`ceil(34200 * (1/300)) == 115` → broadcast error); it is length-dependent, so it could hit any language. Verified:
+  real synthesis for all 9 languages from an `af_heart` request (incl. a 375-char Japanese paragraph), 36 pytest, ruff
+  clean, typecheck/eslint clean, chunker unit tests pass. Learned: `pyopenjtalk` is sdist-only, so Linux hosts need
+  `cmake` + a C++ compiler (documented in README). Follow-up: Korean/Vietnamese/Hebrew exist in misaki but Kokoro v1.0
+  has no voices for them and mlx-audio's pipeline rejects those lang codes; optional per-language voice preferences in
+  the options page.
 
 ## Notes
 
-- Reflection/verification: implemented cross-tab playback ownership, pending content-script audio resolution on stop, and Test sound fetch/audio cancellation and release; regenerated extension scripts. `pnpm typecheck`, `pnpm lint:js`, `uv run ruff check .`, `uv run ruff format --check --diff .`, and `uv run pytest` pass (18 tests). `pnpm format:js:check` flags five existing-style files including untouched `src/chunk-text.ts` and `src/popup/popup.ts`; formatting whole files would create unrelated churn. `pnpm test:ext` reached Playwright but 16 tests could not launch because configured Chromium is missing (6 passed). Follow-up: rerun extension tests after Chromium is installed; no functionality follow-up identified.
+- Reflection/verification: implemented cross-tab playback ownership, pending content-script audio resolution on stop,
+  and Test sound fetch/audio cancellation and release; regenerated extension scripts. `pnpm typecheck`, `pnpm lint:js`,
+  `uv run ruff check .`, `uv run ruff format --check --diff .`, and `uv run pytest` pass (18 tests).
+  `pnpm format:js:check` flags five existing-style files including untouched `src/chunk-text.ts` and
+  `src/popup/popup.ts`; formatting whole files would create unrelated churn. `pnpm test:ext` reached Playwright but 16
+  tests could not launch because configured Chromium is missing (6 passed). Follow-up: rerun extension tests after
+  Chromium is installed; no functionality follow-up identified.

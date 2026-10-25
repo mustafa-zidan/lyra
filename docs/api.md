@@ -113,33 +113,42 @@ Synthesises speech from text and returns a WAV audio file.
 ```json
 {
   "text": "Hello, world!",
-  "voice": "leo",
+  "voice": "af_heart",
+  "language": "en",
   "format": "wav"
 }
 ```
 
-| Field    | Type   | Required | Default                     | Description                          |
-|----------|--------|----------|-----------------------------|--------------------------------------|
-| `text`   | string | Yes      | -                           | Input text (1 – 5 000 characters)    |
-| `voice`  | string | No       | Server default (e.g. `leo`) | One of the 8 voice IDs               |
-| `format` | string | No       | `"wav"`                     | Audio format, only `"wav"` supported |
+| Field      | Type   | Required | Default                          | Description                                   |
+|------------|--------|----------|----------------------------------|-----------------------------------------------|
+| `text`     | string | Yes      | -                                | Input text (1 – 5 000 characters)             |
+| `voice`    | string | No       | Server default (e.g. `af_heart`) | A voice ID from `GET /voices`                 |
+| `model`    | string | No       | Server default                   | A model ID from `GET /models`                 |
+| `language` | string | No       | -                                | BCP-47 hint, e.g. the page's `lang` (`pt-BR`) |
+| `format`   | string | No       | `"wav"`                          | Audio format, only `"wav"` supported          |
+
+The language is resolved as: Japanese/Chinese/Hindi script in `text`, then `language`, then the
+voice's language. If `voice` doesn't speak the resolved language, a voice that does is used
+instead. Unsupported `language` tags (e.g. `de`) are ignored.
 
 ### Response 200
 
 - **Content-Type**: `audio/wav`
 - **Body**: Raw WAV binary
 
-| Response header    | Description                               |
-|--------------------|-------------------------------------------|
-| `X-Audio-Duration` | Duration of the generated audio (seconds) |
-| `X-Cached`         | `"true"` if served from cache             |
-| `X-Voice`          | Voice ID used for this response           |
+| Response header    | Description                                |
+|--------------------|--------------------------------------------|
+| `X-Audio-Duration` | Duration of the generated audio (seconds)  |
+| `X-Cached`         | `"true"` if served from cache              |
+| `X-Voice`          | Voice ID used for this response            |
+| `X-Model`          | Model ID requested (empty for the default) |
+| `X-Language`       | Language the text was read as              |
 
 ### Response 400: Invalid voice or format
 
 ```json
 {
-  "detail": "Invalid voice: 'unknown_voice'. Valid voices: dan, jess, leah, leo, mia, tara, zac, zoe"
+  "detail": "Invalid voice: 'unknown_voice'. Valid voices: af_heart, af_bella, ..."
 }
 ```
 

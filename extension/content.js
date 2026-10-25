@@ -437,15 +437,23 @@
         if (selectionButton)
             selectionButton.style.display = 'none';
     }
+    /** BCP-47 language of the selection: nearest `lang` attribute, else the document's. */
+    function selectionLanguage() {
+        const node = window.getSelection()?.anchorNode;
+        const el = node instanceof Element ? node : node?.parentElement;
+        const lang = el?.closest('[lang]')?.getAttribute('lang') || document.documentElement.lang;
+        return lang?.trim() || undefined;
+    }
     async function onSelectionButtonClick(e) {
         e.preventDefault();
         e.stopPropagation();
         const text = window.getSelection()?.toString()?.trim();
+        const language = selectionLanguage();
         hideSelectionButton();
         if (!text)
             return;
         try {
-            await api.runtime.sendMessage({ action: 'speak', text });
+            await api.runtime.sendMessage({ action: 'speak', text, language });
         }
         catch {
             // Background unavailable — ignore.
@@ -531,6 +539,7 @@
             case 'get-selection':
                 return Promise.resolve({
                     text: window.getSelection()?.toString()?.trim() ?? '',
+                    language: selectionLanguage(),
                 });
         }
     });

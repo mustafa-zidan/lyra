@@ -52,7 +52,12 @@ def mock_tts_service(settings_override: Settings) -> Iterator[MagicMock]:
     svc.is_available = True
     svc.provider_name = real.provider_name
 
-    async def mock_generate(text: str, voice: str | None = None, model_id: str | None = None):
+    async def mock_generate(
+        text: str,
+        voice: str | None = None,
+        model_id: str | None = None,
+        language: str | None = None,
+    ):
         mid = model_id or settings_override.mlx_model
         v = voice or settings_override.mlx_default_voice
         if v not in {entry["id"] for entry in real.list_voices(mid)}:

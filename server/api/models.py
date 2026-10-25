@@ -26,6 +26,17 @@ class TTSRequest(BaseModel):
         ),
         examples=["mlx-community/Kokoro-82M-bf16"],
     )
+    language: str | None = Field(
+        default=None,
+        max_length=35,
+        description=(
+            "Optional BCP-47 language hint, e.g. the page's lang attribute. Text in Japanese, "
+            "Chinese or Hindi script is detected automatically; the hint covers Latin-script "
+            "languages. If the voice doesn't speak the resolved language, a matching voice "
+            "is used instead (reported in X-Voice)."
+        ),
+        examples=["ja", "pt-BR"],
+    )
     format: str = Field(
         default="wav",
         description="Audio format. Currently only 'wav' is supported.",

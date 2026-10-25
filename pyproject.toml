@@ -20,7 +20,8 @@ dependencies = [
 # macOS on Apple Silicon: mlx pulls in mlx-metal (GPU via Metal).
 apple = [
     "mlx-audio; sys_platform == 'darwin' and platform_machine == 'arm64'",
-    "misaki[en]; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "misaki[en,ja,zh]; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "unidic-lite; sys_platform == 'darwin' and platform_machine == 'arm64'",
     "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl ; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
 # Linux, CPU only (x86_64 / aarch64): mlx[cpu] pulls in mlx-cpu.
@@ -28,7 +29,8 @@ linux-cpu = [
     "mlx[cpu]; sys_platform == 'linux'",
     "mlx-audio; sys_platform == 'linux'",
     "torch; sys_platform == 'linux'",
-    "misaki[en]; sys_platform == 'linux'",
+    "misaki[en,ja,zh]; sys_platform == 'linux'",
+    "unidic-lite; sys_platform == 'linux'",
     "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl ; sys_platform == 'linux'",
 ]
 # Linux with an NVIDIA GPU (CUDA 12): mlx[cuda12] pulls in mlx-cuda-12.
@@ -36,7 +38,8 @@ linux-cuda = [
     "mlx[cuda12]; sys_platform == 'linux'",
     "mlx-audio; sys_platform == 'linux'",
     "torch; sys_platform == 'linux'",
-    "misaki[en]; sys_platform == 'linux'",
+    "misaki[en,ja,zh]; sys_platform == 'linux'",
+    "unidic-lite; sys_platform == 'linux'",
     "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl ; sys_platform == 'linux'",
 ]
 dev = [

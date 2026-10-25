@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 /**
  * Split text at sentence boundaries into chunks of at most `maxLen` characters.
+ * Recognises Latin, CJK (。！？) and Devanagari (।) sentence marks.
  *
  * Exported as an ES module so it can be imported in Node.js unit tests while
  * background.ts remains a plain script for cross-browser compatibility.
  */
 export function chunkText(text: string, maxLen = 500): string[] {
-    const sentences = text.match(/[^.!?]+[.!?]*/g) ?? [text];
+    const sentences = text.match(/[^.!?。！？｡।]+[.!?。！？｡।]*/g) ?? [text];
     const chunks: string[] = [];
     let current = '';
 

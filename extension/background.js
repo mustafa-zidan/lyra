@@ -59,7 +59,10 @@ if (api) {
         if (!text || !tab?.id)
             return;
         const { serverUrl, defaultVoice, selectedModel } = await getSettings();
-        await speakInTab(tab.id, text, defaultVoice, serverUrl, selectedModel);
+        const selection = (await api.tabs
+            .sendMessage(tab.id, { action: 'get-selection' })
+            .catch(() => undefined));
+        await speakInTab(tab.id, text, defaultVoice, serverUrl, selectedModel, selection?.language);
     });
     // ---------------------------------------------------------------------------
     // Message handling (from popup / content script)
@@ -88,7 +91,7 @@ async function handleMessage(message, sender) {
         const voice = message.voice ?? settings.defaultVoice;
         const serverUrl = message.serverUrl ?? settings.serverUrl;
         const model = message.model ?? settings.selectedModel;
-        speakInTab(tabId, text, voice, serverUrl, model).catch(console.error);
+        speakInTab(tabId, text, voice, serverUrl, model, message.language).catch(console.error);
         return { ok: true };
     }
     if (action === 'stop') {
@@ -133,7 +136,7 @@ async function handleMessage(message, sender) {
 /**
  * Generate speech for each chunk of text, highlighting and playing sequentially.
  */
-async function speakInTab(tabId, text, voice, serverUrl, model) {
+async function speakInTab(tabId, text, voice, serverUrl, model, language) {
     // Claim this read; any older loop will see playbackSession move past its id.
     const session = ++playbackSession;
     const previousTabId = playbackTabId;
@@ -159,7 +162,7 @@ async function speakInTab(tabId, text, voice, serverUrl, model) {
             activeFetch = controller;
             let audioBase64;
             try {
-                audioBase64 = await fetchTTS(chunk, voice, serverUrl, model, controller.signal);
+                audioBase64 = await fetchTTS(chunk, voice, serverUrl, model, language, controller.signal);
             }
             catch (err) {
                 // A deliberate stop aborts the fetch — swallow it, don't show an error.
@@ -197,11 +200,13 @@ async function speakInTab(tabId, text, voice, serverUrl, model) {
  * Audio API (decodeAudioData) which operates on an ArrayBuffer and is not subject to
  * media-src CSP restrictions.
  */
-async function fetchTTS(text, voice, serverUrl, model, signal) {
+async function fetchTTS(text, voice, serverUrl, model, language, signal) {
     const url = `${serverUrl}/tts/generate`;
     const body = { text, voice: voice || DEFAULT_VOICE };
     if (model)
         body.model = model;
+    if (language)
+        body.language = language;
     const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -260,9 +265,10 @@ async function fetchHealth(serverUrl) {
 // ---------------------------------------------------------------------------
 /**
  * Split text at sentence boundaries into chunks of at most `maxLen` characters.
+ * Recognises Latin, CJK (。！？) and Devanagari (।) sentence marks.
  */
 function chunkText(text, maxLen = 500) {
-    const sentences = text.match(/[^.!?]+[.!?]*/g) ?? [text];
+    const sentences = text.match(/[^.!?。！？｡।]+[.!?。！？｡।]*/g) ?? [text];
     const chunks = [];
     let current = '';
     for (const sentence of sentences) {

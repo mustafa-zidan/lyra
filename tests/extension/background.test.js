@@ -48,4 +48,12 @@ test.describe('chunkText()', () => {
     const result = chunkText(text, 10);
     expect(result.length).toBeGreaterThan(1);
   });
+
+  test('splits at CJK and Devanagari sentence marks', () => {
+    expect(chunkText('今日はいい天気ですね。散歩しましょう！', 12)).toEqual([
+      '今日はいい天気ですね。',
+      '散歩しましょう！',
+    ]);
+    expect(chunkText('नमस्ते। आप कैसे हैं?', 8)).toEqual(['नमस्ते।', 'आप कैसे हैं?']);
+  });
 });

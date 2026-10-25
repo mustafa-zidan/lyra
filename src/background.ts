@@ -68,6 +68,8 @@ interface ExtMessage {
   voice?: string;
   model?: string;
   serverUrl?: string;
+  /** BCP-47 language of the text's page/element, used by the server to pick G2P + voice. */
+  language?: string;
 }
 
 interface HealthStatus {
@@ -109,7 +111,10 @@ if (api) {
     if (!text || !tab?.id) return;
 
     const {serverUrl, defaultVoice, selectedModel} = await getSettings();
-    await speakInTab(tab.id, text, defaultVoice, serverUrl, selectedModel);
+    const selection = (await api!.tabs
+        .sendMessage(tab.id, {action: 'get-selection'})
+        .catch(() => undefined)) as { language?: string } | undefined;
+    await speakInTab(tab.id, text, defaultVoice, serverUrl, selectedModel, selection?.language);
   });
 
   // ---------------------------------------------------------------------------
@@ -146,7 +151,7 @@ async function handleMessage(
     const serverUrl = message.serverUrl ?? settings.serverUrl;
     const model = message.model ?? settings.selectedModel;
 
-    speakInTab(tabId, text, voice, serverUrl, model).catch(console.error);
+    speakInTab(tabId, text, voice, serverUrl, model, message.language).catch(console.error);
     return {ok: true};
   }
 
@@ -203,6 +208,7 @@ async function speakInTab(
     voice: string,
     serverUrl: string,
     model: string,
+    language?: string,
 ): Promise<void> {
   // Claim this read; any older loop will see playbackSession move past its id.
   const session = ++playbackSession;
@@ -231,7 +237,7 @@ async function speakInTab(
       activeFetch = controller;
       let audioBase64: string;
       try {
-        audioBase64 = await fetchTTS(chunk, voice, serverUrl, model, controller.signal);
+        audioBase64 = await fetchTTS(chunk, voice, serverUrl, model, language, controller.signal);
       } catch (err) {
         // A deliberate stop aborts the fetch — swallow it, don't show an error.
         if (controller.signal.aborted || session !== playbackSession) return;
@@ -267,11 +273,13 @@ async function fetchTTS(
     voice: string,
     serverUrl: string,
     model: string,
+    language: string | undefined,
     signal?: AbortSignal,
 ): Promise<string> {
   const url = `${serverUrl}/tts/generate`;
   const body: Record<string, string> = {text, voice: voice || DEFAULT_VOICE};
   if (model) body.model = model;
+  if (language) body.language = language;
 
   const response = await fetch(url, {
     method: 'POST',
@@ -333,9 +341,10 @@ async function fetchHealth(serverUrl: string): Promise<HealthStatus> {
 
 /**
  * Split text at sentence boundaries into chunks of at most `maxLen` characters.
+ * Recognises Latin, CJK (。！？) and Devanagari (।) sentence marks.
  */
 function chunkText(text: string, maxLen = 500): string[] {
-  const sentences = text.match(/[^.!?]+[.!?]*/g) ?? [text];
+  const sentences = text.match(/[^.!?。！？｡।]+[.!?。！？｡।]*/g) ?? [text];
   const chunks: string[] = [];
   let current = '';
 

@@ -22,7 +22,7 @@ _VALID_FORMATS = {"wav"}
     description=(
         "Converts the supplied text to speech and returns a WAV audio file. "
         "Custom response headers carry metadata: ``X-Audio-Duration``, ``X-Cached``, ``X-Voice``, "
-        "``X-Model``."
+        "``X-Model``, ``X-Language``."
     ),
     response_class=Response,
     responses={
@@ -44,6 +44,10 @@ _VALID_FORMATS = {"wav"}
                 },
                 "X-Model": {
                     "description": "Model used for generation.",
+                    "schema": {"type": "string"},
+                },
+                "X-Language": {
+                    "description": "Language the text was read as (e.g. 'Japanese').",
                     "schema": {"type": "string"},
                 },
             },
@@ -73,6 +77,7 @@ async def generate(body: TTSRequest, request: Request) -> Response:
             text=body.text,
             voice=body.voice,
             model_id=body.model,
+            language=body.language,
         )
     except ValueError as exc:
         # Bad request data (e.g. an unknown voice) — client error, not server error.
@@ -89,6 +94,7 @@ async def generate(body: TTSRequest, request: Request) -> Response:
             "X-Cached": str(audio.cached).lower(),
             "X-Voice": audio.voice,
             "X-Model": body.model or "",
+            "X-Language": audio.language,
             "Cache-Control": "no-store",
         },
     )

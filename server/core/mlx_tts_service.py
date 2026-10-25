@@ -5,6 +5,9 @@ import asyncio
 import concurrent.futures
 import io
 import logging
+import math
+import os
+import re
 import wave
 from dataclasses import dataclass
 from typing import Any
@@ -27,6 +30,56 @@ except ImportError:
     )
 
 
+def _use_unidic_lite_if_unidic_missing() -> None:
+    """Point fugashi at unidic-lite when the full unidic dictionary isn't downloaded.
+
+    misaki[ja] depends on ``unidic``, which ships without its dictionary (~500 MB, fetched by
+    ``python -m unidic download``). fugashi prefers ``unidic`` whenever it imports, so without
+    this the Japanese G2P fails on a missing ``mecabrc``. The platform extras install
+    ``unidic-lite``; a downloaded full unidic still wins.
+    """
+    try:
+        import unidic
+        import unidic_lite
+    except ImportError:
+        return
+    if not os.path.exists(os.path.join(unidic.DICDIR, "mecabrc")):
+        unidic.DICDIR = unidic_lite.DICDIR
+
+
+def _patch_kokoro_interpolate() -> None:
+    """Work around a float-rounding crash in mlx-audio's Kokoro vocoder (<= 0.6.1).
+
+    SineGen downsamples the f0 track by ``1/300`` and upsamples it back by ``300``. The
+    output size is ``ceil(len * scale)``, so e.g. ``ceil(34200 * (1/300))`` is
+    ``ceil(114.00000000000001) == 115`` and the round trip comes back one frame long, raising
+    ``[broadcast_shapes] Shapes (1,34200,1) and (1,34500,9)``. Whether it hits depends on the
+    predicted audio length, so any language can trigger it. Rounding the product before
+    ``ceil`` restores the intended size.
+    """
+    try:
+        from mlx_audio.tts.models.kokoro import istftnet
+    except ImportError:
+        return
+    original = istftnet.interpolate
+    if getattr(original, "_lyra_patched", False):
+        return
+
+    def interpolate(input, size=None, scale_factor=None, *args, **kwargs):
+        if size is None and isinstance(scale_factor, int | float):
+            size = max(1, math.ceil(round(input.shape[-1] * scale_factor, 6)))
+            scale_factor = None
+        return original(input, size, scale_factor, *args, **kwargs)
+
+    interpolate._lyra_patched = True  # type: ignore[attr-defined]
+    istftnet.interpolate = interpolate
+
+
+if _MLX_AVAILABLE:
+    _use_unidic_lite_if_unidic_missing()
+    _patch_kokoro_interpolate()
+
+
 # ---------------------------------------------------------------------------
 # Result type
 # ---------------------------------------------------------------------------
@@ -38,6 +91,7 @@ class AudioResult:
     duration: float
     cached: bool = False
     voice: str = ""
+    language: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -59,8 +113,30 @@ _KOKORO_LANG_LABEL: dict[str, str] = {
     "p": "Portuguese",
 }
 
-# First-character → Kokoro lang_code (passed to the model at generation time).
-_KOKORO_LANG_CODE: dict[str, str] = {prefix: prefix for prefix in _KOKORO_LANG_LABEL}
+# BCP-47 language tag (lower-cased) → Kokoro lang_code. Region-specific tags are tried
+# before the bare language, so "en-GB" → British and any other "en-*" → American.
+_BCP47_TO_LANG_CODE: dict[str, str] = {
+    "en-gb": "b",
+    "en": "a",
+    "ja": "j",
+    "zh": "z",
+    "cmn": "z",
+    "es": "e",
+    "fr": "f",
+    "hi": "h",
+    "it": "i",
+    "pt": "p",
+}
+
+# Scripts that identify a language on their own, whatever voice the user picked.
+_KANA_RE = re.compile(r"[\u3040-\u30ff\u31f0-\u31ff\uff66-\uff9f]")
+_HAN_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
+_DEVANAGARI_RE = re.compile(r"[\u0900-\u097f]")
+_LATIN_RE = re.compile(r"[A-Za-z\u00c0-\u024f]")
+
+# Kokoro's pipeline only splits non-English text on ".!?" and truncates past 510 phonemes,
+# so also split on CJK and Devanagari sentence marks.
+_SPLIT_PATTERN = r"\n+|(?<=[。！？｡।])"
 
 _GENDER_LABEL: dict[str, str] = {"f": "Female", "m": "Male"}
 
@@ -162,9 +238,46 @@ MODELS: dict[str, dict[str, Any]] = {
 # ---------------------------------------------------------------------------
 
 
-def _detect_lang_code(voice: str) -> str | None:
-    """Derive Kokoro lang_code from voice ID prefix (e.g. 'af_heart' → 'a')."""
-    return _KOKORO_LANG_CODE.get(voice[0]) if voice else None
+def _lang_code_from_tag(tag: str | None) -> str | None:
+    """Map a BCP-47 tag (e.g. 'ja', 'pt-BR', 'en-GB') to a Kokoro lang_code, or None."""
+    if not tag:
+        return None
+    tag = tag.strip().lower().replace("_", "-")
+    parts = tag.split("-")
+    return _BCP47_TO_LANG_CODE.get("-".join(parts[:2])) or _BCP47_TO_LANG_CODE.get(parts[0])
+
+
+def _detect_script_lang(text: str) -> str | None:
+    """Kokoro lang_code implied by the text's script (kana, Han, Devanagari), or None.
+
+    Only scripts that outnumber Latin letters count, so an English sentence quoting a
+    Chinese name stays English. Latin-script languages can't be told apart this way.
+    """
+    latin = len(_LATIN_RE.findall(text))
+    kana = len(_KANA_RE.findall(text))
+    han = len(_HAN_RE.findall(text))
+    devanagari = len(_DEVANAGARI_RE.findall(text))
+    if kana and kana + han > latin:
+        return "j"
+    if han > latin:
+        return "z"
+    if devanagari > latin:
+        return "h"
+    return None
+
+
+def _resolve_lang_code(text: str, voice: str, hint: str | None) -> str:
+    """Pick the Kokoro language for ``text``: script first, then the hint, then the voice.
+
+    The script wins because a voice of another language can't read it at all (kana through
+    the English G2P is gibberish). Han-only text is ambiguous between Chinese and Japanese
+    (e.g. a kanji heading), so a Japanese hint keeps it Japanese.
+    """
+    hinted = _lang_code_from_tag(hint)
+    script = _detect_script_lang(text)
+    if script == "z" and hinted == "j":
+        return "j"
+    return script or hinted or voice[0]
 
 
 def _voice_language(voice_id: str) -> str | None:
@@ -188,6 +301,20 @@ def _array_to_wav(audio: np.ndarray, sample_rate: int) -> bytes:
         wf.setframerate(sample_rate)
         wf.writeframes(audio_i16.tobytes())
     return buf.getvalue()
+
+
+def _voice_for_lang(lang_code: str, voice: str, voices: list[dict[str, str]], default: str) -> str:
+    """Keep ``voice`` if it speaks ``lang_code``; otherwise pick one that does.
+
+    American and British English voices are interchangeable. Prefers the server default
+    voice, then the first voice of that language in the registry.
+    """
+    english = {"a", "b"}
+    if voice[0] == lang_code or {voice[0], lang_code} <= english:
+        return voice
+    if default and default[0] == lang_code:
+        return default
+    return next((v["id"] for v in voices if v["id"][0] == lang_code), voice)
 
 
 # ---------------------------------------------------------------------------
@@ -279,7 +406,13 @@ class MLXTTSService:
         text: str,
         voice: str | None = None,
         model_id: str | None = None,
+        language: str | None = None,
     ) -> AudioResult:
+        """Synthesize ``text``; ``language`` is an optional BCP-47 hint (e.g. the page lang).
+
+        The voice is swapped for one of the resolved language when it doesn't match; the
+        voice actually used is reported in the result.
+        """
         mid = model_id or self._settings.mlx_model
         v = voice or self._settings.mlx_default_voice
         # ValueError is mapped to HTTP 400 by the route.
@@ -290,11 +423,16 @@ class MLXTTSService:
             raise ValueError(f"Invalid voice: '{v}'. Valid voices: {', '.join(valid_voices)}")
         sample_rate: int = MODELS[mid]["sample_rate"]
 
+        lang_code = _resolve_lang_code(text, v, language)
+        v = _voice_for_lang(lang_code, v, MODELS[mid]["voices"], self._settings.mlx_default_voice)
+
         loop = asyncio.get_event_loop()
         wav_bytes, duration = await loop.run_in_executor(
-            self._executor, self._generate_sync, text, v, mid, sample_rate
+            self._executor, self._generate_sync, text, v, mid, sample_rate, lang_code
         )
-        return AudioResult(audio_data=wav_bytes, duration=duration, voice=v)
+        return AudioResult(
+            audio_data=wav_bytes, duration=duration, voice=v, language=_KOKORO_LANG_LABEL[lang_code]
+        )
 
     # ------------------------------------------------------------------
     # Synchronous internals (run inside ThreadPoolExecutor)
@@ -313,14 +451,13 @@ class MLXTTSService:
         voice: str,
         model_id: str,
         sample_rate: int,
+        lang_code: str,
     ) -> tuple[bytes, float]:
         model = self._load_model(model_id)
 
-        kwargs: dict[str, Any] = {"voice": voice}
-        if "Kokoro" in model_id or "kokoro" in model_id:
-            lang_code = _detect_lang_code(voice)
-            if lang_code:
-                kwargs["lang_code"] = lang_code
+        kwargs: dict[str, Any] = {"voice": voice, "lang_code": lang_code}
+        if lang_code not in ("a", "b"):
+            kwargs["split_pattern"] = _SPLIT_PATTERN
 
         chunks: list[np.ndarray] = []
         try:

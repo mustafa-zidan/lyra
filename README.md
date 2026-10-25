@@ -17,7 +17,7 @@ Lyra Server  (FastAPI)
         │
         │  Python API
         ▼
-mlx-audio  (Kokoro-82M, 50 voices, 8 languages)
+mlx-audio  (Kokoro-82M, 50 voices, 9 languages)
 ```
 
 ---
@@ -36,19 +36,41 @@ mlx-audio  (Kokoro-82M, 50 voices, 8 languages)
 The TTS runtime (MLX, mlx-audio, misaki, spaCy model) is installed through one platform extra.
 Pick exactly one:
 
-| Extra        | Platform                               | MLX backend                   | Status     |
-|--------------|----------------------------------------|-------------------------------|------------|
-| `apple`      | macOS on Apple Silicon (M1+)           | `mlx-metal` (GPU via Metal)   | Tested     |
-| `linux-cpu`  | Linux x86_64 / aarch64                 | `mlx-cpu`                     | Untested   |
-| `linux-cuda` | Linux with an NVIDIA GPU (CUDA 12)     | `mlx-cuda-12`                 | Untested   |
+| Extra        | Platform                           | MLX backend                 | Status   |
+|--------------|------------------------------------|-----------------------------|----------|
+| `apple`      | macOS on Apple Silicon (M1+)       | `mlx-metal` (GPU via Metal) | Tested   |
+| `linux-cpu`  | Linux x86_64 / aarch64             | `mlx-cpu`                   | Untested |
+| `linux-cuda` | Linux with an NVIDIA GPU (CUDA 12) | `mlx-cuda-12`               | Untested |
 
 Each extra is gated by a platform marker, so choosing the wrong one installs nothing.
 `linux-cpu` and `linux-cuda` cannot be combined (so `uv sync --all-extras` is not supported).
 On Linux, `torch` (pulled in by misaki's spaCy stack, not used for inference) comes from the
 PyTorch CPU index to avoid the multi-GB CUDA build.
 
+Building `pyopenjtalk` (Japanese G2P, sdist only) needs `cmake` and a C++ compiler: Xcode
+Command Line Tools on macOS, `build-essential cmake` on Debian/Ubuntu.
+
 Without a platform extra the server still starts, but `/health` reports `degraded` and
 `/tts/generate` returns 503. CI runs this way, with the TTS service mocked.
+
+### Languages
+
+Every Kokoro language is supported: English (US/UK), Japanese, Mandarin Chinese, Spanish,
+French, Hindi, Italian and Brazilian Portuguese. English goes through misaki's English G2P,
+Japanese and Chinese through `misaki[ja]` / `misaki[zh]`, and the rest through espeak-ng.
+
+The server picks the language for each request, so you don't have to switch voices by hand:
+
+1. Text in Japanese (kana), Chinese (Han) or Hindi (Devanagari) script is detected from the
+   text itself.
+2. Otherwise the extension's page language (the nearest `lang` attribute) is used.
+3. Otherwise the selected voice's language.
+
+If the selected voice doesn't speak that language, the server uses a voice that does (your
+default voice if it matches, else the first voice of that language) and reports it in `X-Voice`.
+
+Japanese uses the bundled `unidic-lite` dictionary. For the full UniDic (~500 MB, slightly
+better readings) run `uv run python -m unidic download`; it's picked up automatically.
 
 ---
 
@@ -84,12 +106,14 @@ Interactive docs: `http://127.0.0.1:8000/docs`
 ### 3. Load the browser extension
 
 **Chrome:**
+
 1. Open `chrome://extensions`
 2. Enable **Developer mode** (top-right toggle)
 3. Click **Load unpacked**
 4. Select the `extension/` directory in this repository
 
 **Firefox:**
+
 1. Open `about:debugging#/runtime/this-firefox`
 2. Click **Load Temporary Add-on…**
 3. Select `extension/manifest.json`
