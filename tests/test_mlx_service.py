@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from server.core.config import Settings
 from server.core.mlx_tts_service import (
+    _MLX_AVAILABLE,
     MODELS,
     MLXTTSService,
     _array_to_wav,
@@ -136,6 +137,7 @@ def test_language_from_tag(tag: str, expected: str | None) -> None:
     assert _language_from_tag(tag) == expected
 
 
+@pytest.mark.skipif(not _MLX_AVAILABLE, reason="needs a platform extra (mlx-audio)")
 def test_kokoro_interpolate_round_trip_keeps_length() -> None:
     import mlx.core as mx
     from mlx_audio.tts.models.kokoro import istftnet
