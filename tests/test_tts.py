@@ -3,8 +3,9 @@
 
 from unittest.mock import AsyncMock, MagicMock
 
-from eurydice.types import AudioFormat, AudioResult, Voice
 from fastapi.testclient import TestClient
+
+from server.core.mlx_tts_service import AudioResult
 
 
 def test_generate_returns_wav(client: TestClient) -> None:
@@ -14,12 +15,14 @@ def test_generate_returns_wav(client: TestClient) -> None:
     assert "X-Audio-Duration" in response.headers
     assert "X-Voice" in response.headers
     assert "X-Cached" in response.headers
+    assert response.headers["X-Voice"] == "af_heart"
     assert len(response.content) > 0
 
 
 def test_generate_with_valid_voice(client: TestClient) -> None:
-    response = client.post("/tts/generate", json={"text": "Hello!", "voice": "tara"})
+    response = client.post("/tts/generate", json={"text": "Hello!", "voice": "bm_george"})
     assert response.status_code == 200
+    assert response.headers["X-Voice"] == "bm_george"
 
 
 def test_generate_invalid_voice(client: TestClient) -> None:
@@ -60,9 +63,7 @@ def test_generate_cached_response(client: TestClient, mock_tts_service: MagicMoc
     cached_audio = AudioResult(
         audio_data=b"RIFF\x00\x00\x00\x00WAVEdata\x00\x00\x00\x00",
         duration=0.5,
-        format=AudioFormat.WAV,
-        sample_rate=24000,
-        voice=Voice.LEO,
+        voice="af_heart",
         cached=True,
     )
     mock_tts_service.generate = AsyncMock(return_value=cached_audio)

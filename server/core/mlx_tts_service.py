@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""MLX-Audio TTS service — Apple Silicon backend via the mlx-audio library."""
+"""MLX-Audio TTS service — Kokoro via the mlx-audio library (Metal, CPU or CUDA MLX backend)."""
 
 import asyncio
 import concurrent.futures
@@ -21,11 +21,14 @@ try:
     _MLX_AVAILABLE = True
 except ImportError:
     _MLX_AVAILABLE = False
-    logger.warning("mlx-audio not installed; MLX TTS backend unavailable (pip install mlx-audio)")
+    logger.warning(
+        "mlx-audio not installed; TTS unavailable. "
+        "Install a platform extra: uv sync --extra apple | linux-cpu | linux-cuda"
+    )
 
 
 # ---------------------------------------------------------------------------
-# Shared result type (mirrors eurydice AudioResult interface)
+# Result type
 # ---------------------------------------------------------------------------
 
 
@@ -193,7 +196,7 @@ def _array_to_wav(audio: np.ndarray, sample_rate: int) -> bytes:
 
 
 class MLXTTSService:
-    """TTS service backed by the mlx-audio library (Apple Silicon only)."""
+    """TTS service backed by the mlx-audio library."""
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
@@ -279,7 +282,13 @@ class MLXTTSService:
     ) -> AudioResult:
         mid = model_id or self._settings.mlx_model
         v = voice or self._settings.mlx_default_voice
-        sample_rate: int = MODELS.get(mid, {}).get("sample_rate", 24000)
+        # ValueError is mapped to HTTP 400 by the route.
+        if mid not in MODELS:
+            raise ValueError(f"Invalid model: '{mid}'. Valid models: {', '.join(MODELS)}")
+        valid_voices = [entry["id"] for entry in MODELS[mid]["voices"]]
+        if v not in valid_voices:
+            raise ValueError(f"Invalid voice: '{v}'. Valid voices: {', '.join(valid_voices)}")
+        sample_rate: int = MODELS[mid]["sample_rate"]
 
         loop = asyncio.get_event_loop()
         wav_bytes, duration = await loop.run_in_executor(
@@ -319,10 +328,10 @@ class MLXTTSService:
                 chunks.append(np.array(result.audio))
         except SystemExit as exc:
             # spaCy's auto-download calls `pip install` internally, which fails in uv
-            # environments.  Fix: `uv pip install -e ".[mlx]"` (includes en-core-web-sm).
+            # environments.  Fix: sync a platform extra (each one declares en-core-web-sm).
             raise RuntimeError(
                 "Kokoro G2P failed to download its spaCy model via pip. "
-                "Run: uv pip install -e '.[mlx]'  to install en-core-web-sm with uv."
+                "Run: uv sync --extra apple (or linux-cpu / linux-cuda) to install en-core-web-sm."
             ) from exc
 
         audio = np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.float32)

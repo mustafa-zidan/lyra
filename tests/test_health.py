@@ -12,7 +12,7 @@ def test_health_ok(client: TestClient) -> None:
     data = response.json()
     assert data["status"] == "ok"
     assert data["tts_available"] is True
-    assert data["provider"] == "lmstudio"
+    assert data["provider"] == "Kokoro 82M"
 
 
 def test_health_degraded(app, mock_tts_service: MagicMock) -> None:

@@ -4,7 +4,7 @@
  *
  * Responsibilities:
  *  - Register the context-menu item
- *  - Fetch audio from the Eurydice/MLX server
+ *  - Fetch audio from the Lyra (Kokoro/MLX) server
  *  - Play audio injected into the active tab
  *  - Broadcast playback state and chunk highlights to content scripts
  */

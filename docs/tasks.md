@@ -2,9 +2,14 @@
 
 ## In Progress
 
+
 ## To Do
 
+- [ ] Verify `linux-cpu` / `linux-cuda` extras on real Linux hosts (install + Kokoro generation incl. misaki/espeak); only dependency resolution has been checked so far
+
+
 ## Backlog
+
 
 ## Done
 
@@ -33,3 +38,6 @@
 - [x] Generate a nicer icon (SVG + Playwright PNG generation script)
 - [x] Restyle the extension — black and white flat design (popup, options, status bar)
 - [x] Switch extension to TypeScript (src/ → extension/ compiled output)
+- [x] Drop eurydice-tts backend; MLX (Kokoro) is the only TTS backend (deps, config, service, tests, docs). Voice/model validation now in MLXTTSService (ValueError → 400).
+- [x] Platform extras `apple` / `linux-cpu` / `linux-cuda`. Each is marker-gated; cpu/cuda declared as a uv conflict (so `--all-extras` is unsupported); Linux torch (transitive via misaki[en] → spacy-curated-transformers, unused for inference) pinned to the PyTorch CPU index. Verified on macOS arm64: `uv sync --extra apple --extra dev`, Kokoro WAV for bm_george, ruff clean, 18 tests pass. Learned: the earlier "MLX is Apple-only" claim was wrong — mlx ships Linux cpu/cuda wheels.
+- [x] Standalone setup: install eurydice-tts>=0.2.0 from PyPI instead of `../eurydice` path source (fresh clones failed `uv sync`); verified fresh-clone `uv sync --all-extras --locked` + Kokoro generation + pytest. Note: espeak-ng fails if the venv path is very long (~160+ chars) — not an issue for normal checkouts.

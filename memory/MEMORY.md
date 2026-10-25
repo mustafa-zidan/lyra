@@ -1,17 +1,17 @@
 # Lyra — Project Memory
 
 ## Project Overview
-Web server + browser extension for the `eurydice-tts` TTS library. Project name: **Lyra**.
+Web server + browser extension for Kokoro TTS via `mlx-audio` (Apple Silicon tested; Linux cpu/cuda extras untested). Project name: **Lyra**.
 - **Server**: FastAPI + uvicorn at `http://127.0.0.1:8000`
 - **Extension**: Manifest V3 ES module service worker, Chrome + Firefox, TypeScript
-- **Parent library**: `../eurydice` (eurydice-tts package, Python 3.12+)
+- **TTS**: Kokoro-82M (bf16 / 8bit / 4bit) via mlx-audio — the only backend. eurydice-tts was removed (2026-10-21).
 - **License**: AGPL-3.0-only
 
 ## Key Files
-- `pyproject.toml` — uv project config; eurydice-tts sourced via `[tool.uv.sources]`
+- `pyproject.toml` — uv project config; TTS runtime via platform extras `apple` / `linux-cpu` / `linux-cuda` (marker-gated; cpu+cuda conflict; Linux torch from PyTorch CPU index). CI installs only `dev` (TTS mocked)
 - `server/main.py` — FastAPI app factory + lifespan
-- `server/core/config.py` — pydantic-settings, env prefix `EURYDICE_`
-- `server/core/tts_service.py` — Eurydice client singleton
+- `server/core/config.py` — pydantic-settings, env prefix `EURYDICE_` (kept for backwards compat)
+- `server/core/mlx_tts_service.py` — MLXTTSService: Kokoro model/voice registry, validation (ValueError → 400), generation
 - `server/api/routes/tts.py` — POST /tts/generate (returns binary WAV)
 - `extension/manifest.json` — MV3 with `"type": "module"` for service worker
 - `src/background.ts` — ES module service worker (compiled → extension/background.js)
@@ -38,8 +38,7 @@ Web server + browser extension for the `eurydice-tts` TTS library. Project name:
 - Highlight: `background: #000; color: #fff`
 
 ## Critical uv Configuration
-- Use `[tool.uv.sources]` (NOT inline `@ path`) for local path deps
-- Must set `[tool.hatch.metadata] allow-direct-references = true`
+- Must set `[tool.hatch.metadata] allow-direct-references = true` (en-core-web-sm is a URL dep)
 
 ## Dependency Versions (resolved 2026-02-21 / updated 2026-03-01)
 - fastapi==0.129.1, uvicorn==0.41.0, pydantic-settings==2.13.1

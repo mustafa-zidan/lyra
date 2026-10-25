@@ -18,15 +18,7 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8000
 
-    # TTS backend selection: "eurydice" or "mlx_audio"
-    tts_backend: str = "mlx_audio"
-
-    # eurydice-tts backend settings
-    tts_provider: str = "auto"
-    tts_server_url: str = "http://localhost:1234/v1"
-    default_voice: str = "leo"
-
-    # mlx-audio backend settings
+    # mlx-audio (Kokoro) TTS settings
     mlx_model: str = "mlx-community/Kokoro-82M-bf16"
     mlx_default_voice: str = "af_heart"
 

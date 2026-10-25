@@ -1,7 +1,7 @@
 [project]
 name = "lyra"
 version = "0.1.0"
-description = "TTS web server and browser extension powered by eurydice-tts"
+description = "TTS web server and browser extension powered by mlx-audio (Kokoro)"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "AGPL-3.0-only" }
@@ -10,17 +10,34 @@ dependencies = [
     "fastapi>=0.138.1",
     "uvicorn[standard]>=0.49.0",
     "pydantic-settings>=2.14.2",
-    "eurydice-tts[audio]",
+    "numpy>=2.4.2",
 ]
 
-[tool.uv.sources]
-eurydice-tts = { path = "../eurydice", editable = true }
-
+# TTS runtime extras — pick exactly one for your platform. Without one the server starts
+# but reports TTS unavailable (/health "degraded", /tts/generate 503), which is what CI uses.
+# Each extra is gated by a platform marker, so selecting the wrong one installs nothing.
 [project.optional-dependencies]
-mlx = [
-    "mlx-audio",
-    "misaki[en]",
-    "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
+# macOS on Apple Silicon: mlx pulls in mlx-metal (GPU via Metal).
+apple = [
+    "mlx-audio; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "misaki[en]; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl ; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
+# Linux, CPU only (x86_64 / aarch64): mlx[cpu] pulls in mlx-cpu.
+linux-cpu = [
+    "mlx[cpu]; sys_platform == 'linux'",
+    "mlx-audio; sys_platform == 'linux'",
+    "torch; sys_platform == 'linux'",
+    "misaki[en]; sys_platform == 'linux'",
+    "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl ; sys_platform == 'linux'",
+]
+# Linux with an NVIDIA GPU (CUDA 12): mlx[cuda12] pulls in mlx-cuda-12.
+linux-cuda = [
+    "mlx[cuda12]; sys_platform == 'linux'",
+    "mlx-audio; sys_platform == 'linux'",
+    "torch; sys_platform == 'linux'",
+    "misaki[en]; sys_platform == 'linux'",
+    "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl ; sys_platform == 'linux'",
 ]
 dev = [
     "pytest>=9.1.1",
@@ -42,6 +59,22 @@ allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["server"]
+
+[tool.uv]
+# mlx-cpu and mlx-cuda-12 both provide mlx's native backend; never install both.
+conflicts = [
+    [{ extra = "linux-cpu" }, { extra = "linux-cuda" }],
+]
+
+# torch is only a transitive dep of misaki[en] (via spacy-curated-transformers) and is not
+# used for Kokoro inference. On Linux PyPI ships the multi-GB CUDA build, so use CPU wheels.
+[tool.uv.sources]
+torch = { index = "pytorch-cpu", marker = "sys_platform == 'linux'" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.ruff]
 line-length = 100

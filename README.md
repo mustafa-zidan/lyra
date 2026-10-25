@@ -1,6 +1,8 @@
 # Lyra
 
-HTTP API server and browser extension that expose the [eurydice-tts](https://github.com/mustafa-zidan/eurydice) text-to-speech library to any web page.
+HTTP API server and browser extension that read any web page aloud using the
+[Kokoro-82M](https://huggingface.co/mlx-community/Kokoro-82M-bf16) text-to-speech model, run locally
+via [mlx-audio](https://github.com/Blaizzy/mlx-audio) (MLX on Apple Silicon or Linux).
 
 ---
 
@@ -15,30 +17,38 @@ Lyra Server  (FastAPI)
         │
         │  Python API
         ▼
-eurydice-tts library  (Orpheus TTS model)
+mlx-audio  (Kokoro-82M, 50 voices, 8 languages)
 ```
 
 ---
 
 ## Prerequisites
 
-| Requirement | Notes |
-|-------------|-------|
-| Python 3.12+ | Required by eurydice-tts |
-| [uv](https://docs.astral.sh/uv/) | Python package & project manager |
-| A TTS provider | See [providers](#providers) below |
-| Chrome 88+ or Firefox 109+ | For the browser extension |
+| Requirement                      | Notes                                         |
+|----------------------------------|-----------------------------------------------|
+| A supported platform             | See [platform extras](#platform-extras) below |
+| Python 3.12+                     |                                               |
+| [uv](https://docs.astral.sh/uv/) | Python package & project manager              |
+| Chrome 88+ or Firefox 109+       | For the browser extension                     |
 
-### Providers
+### Platform extras
 
-The server delegates inference to one of the following backends (auto-detected in priority order):
+The TTS runtime (MLX, mlx-audio, misaki, spaCy model) is installed through one platform extra.
+Pick exactly one:
 
-| Provider | Extra | Notes |
-|----------|-------|-------|
-| **vLLM** | `vllm` | Highest throughput — requires CUDA GPU |
-| **orpheus-cpp** | `cpp` | Fast CPU/Apple Silicon inference via llama.cpp |
-| **Embedded** | `embedded` | Local transformers inference (CPU/MPS/CUDA) |
-| **LM Studio** | *(none)* | Default — requires [LM Studio](https://lmstudio.ai) running with the `orpheus-3b-0.1-ft` model loaded |
+| Extra        | Platform                               | MLX backend                   | Status     |
+|--------------|----------------------------------------|-------------------------------|------------|
+| `apple`      | macOS on Apple Silicon (M1+)           | `mlx-metal` (GPU via Metal)   | Tested     |
+| `linux-cpu`  | Linux x86_64 / aarch64                 | `mlx-cpu`                     | Untested   |
+| `linux-cuda` | Linux with an NVIDIA GPU (CUDA 12)     | `mlx-cuda-12`                 | Untested   |
+
+Each extra is gated by a platform marker, so choosing the wrong one installs nothing.
+`linux-cpu` and `linux-cuda` cannot be combined (so `uv sync --all-extras` is not supported).
+On Linux, `torch` (pulled in by misaki's spaCy stack, not used for inference) comes from the
+PyTorch CPU index to avoid the multi-GB CUDA build.
+
+Without a platform extra the server still starts, but `/health` reports `degraded` and
+`/tts/generate` returns 503. CI runs this way, with the TTS service mocked.
 
 ---
 
@@ -49,14 +59,14 @@ The server delegates inference to one of the following backends (auto-detected i
 ```bash
 git clone <this-repo>
 cd lyra
-uv sync
+uv sync --extra apple        # macOS on Apple Silicon
+# uv sync --extra linux-cpu    # Linux, CPU only
+# uv sync --extra linux-cuda   # Linux, NVIDIA GPU (CUDA 12)
 ```
 
-### 2. Start LM Studio (or another provider)
+The Kokoro weights (~330 MB for bf16) are downloaded from Hugging Face on first start.
 
-Load the **Orpheus 3B** model in LM Studio and start the local server on port 1234.
-
-### 3. Run the server
+### 2. Run the server
 
 ```bash
 uv run uvicorn server.main:app --host 127.0.0.1 --port 8000
@@ -71,7 +81,7 @@ uv run lyra
 The API is now available at `http://127.0.0.1:8000`.
 Interactive docs: `http://127.0.0.1:8000/docs`
 
-### 4. Load the browser extension
+### 3. Load the browser extension
 
 **Chrome:**
 1. Open `chrome://extensions`
@@ -95,24 +105,17 @@ Environment variables (prefix: `EURYDICE_`):
 EURYDICE_HOST=127.0.0.1
 EURYDICE_PORT=8000
 
-# TTS provider: auto | lmstudio | embedded | cpp | vllm
-EURYDICE_TTS_PROVIDER=auto
+# Default model: mlx-community/Kokoro-82M-bf16 | Kokoro-82M-8bit | Kokoro-82M-4bit
+EURYDICE_MLX_MODEL=mlx-community/Kokoro-82M-bf16
 
-# LM Studio server URL (used when provider=lmstudio or auto)
-EURYDICE_TTS_SERVER_URL=http://localhost:1234/v1
-
-# Default voice: tara | leah | jess | leo | dan | mia | zac | zoe
-EURYDICE_DEFAULT_VOICE=leo
+# Default voice (see GET /voices), e.g. af_heart, am_adam, bf_emma, bm_george
+EURYDICE_MLX_DEFAULT_VOICE=af_heart
 
 # CORS origins (comma-separated, or * for all)
 EURYDICE_CORS_ORIGINS=*
 ```
 
-Copy `.env.example` to `.env` and adjust as needed:
-
-```bash
-cp .env.example .env
-```
+The same variables can be put in a `.env` file in the project root.
 
 ---
 
@@ -122,25 +125,26 @@ See [docs/api.md](docs/api.md) for the full API reference.
 
 Quick summary:
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/` | API info |
-| `GET` | `/health` | TTS backend status |
-| `GET` | `/voices` | List available voices |
+| Method | Path            | Description                  |
+|--------|-----------------|------------------------------|
+| `GET`  | `/`             | API info                     |
+| `GET`  | `/health`       | TTS backend status           |
+| `GET`  | `/models`       | List Kokoro model variants   |
+| `GET`  | `/voices`       | List available voices        |
 | `POST` | `/tts/generate` | Generate WAV audio from text |
 
 ### Example
 
 ```bash
 curl http://127.0.0.1:8000/health
-# {"status":"ok","tts_available":true,"provider":"lmstudio"}
+# {"status":"ok","tts_available":true,"provider":"Kokoro 82M"}
 
 curl http://127.0.0.1:8000/voices | jq '.voices[].id'
-# "tara" "leah" "jess" "leo" "dan" "mia" "zac" "zoe"
+# "af_heart" "af_bella" ... "pm_alex"
 
 curl -X POST http://127.0.0.1:8000/tts/generate \
   -H "Content-Type: application/json" \
-  -d '{"text": "Hello, world!", "voice": "leo"}' \
+  -d '{"text": "Hello, world!", "voice": "af_heart"}' \
   --output hello.wav
 ```
 
@@ -149,8 +153,8 @@ curl -X POST http://127.0.0.1:8000/tts/generate \
 ## Development
 
 ```bash
-# Install with dev extras
-uv sync --extra dev
+# Install with dev extras (add your platform extra to run real TTS)
+uv sync --extra dev --extra apple
 
 # Lint
 uv run ruff check .
@@ -171,7 +175,7 @@ lyra/
 ├── server/           # FastAPI web server
 │   ├── main.py       # App factory + lifespan
 │   ├── api/          # Routes and Pydantic models
-│   └── core/         # Config and TTS service
+│   └── core/         # Config and Kokoro (mlx-audio) TTS service
 ├── extension/        # Browser extension (Chrome + Firefox)
 │   ├── manifest.json
 │   ├── background.js # Service worker

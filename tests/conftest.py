@@ -1,17 +1,18 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Pytest fixtures shared across the test suite."""
 
+from collections.abc import Iterator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from eurydice.types import AudioFormat, AudioResult, Voice
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
 from server.core.config import Settings
+from server.core.mlx_tts_service import AudioResult, MLXTTSService
 
 
-def _make_fake_audio(voice: Voice = Voice.LEO) -> AudioResult:
+def _make_fake_audio(voice: str = "af_heart") -> AudioResult:
     # Minimal valid WAV: 44-byte header + 2 bytes silence
     wav_header = (
         b"RIFF"
@@ -29,14 +30,7 @@ def _make_fake_audio(voice: Voice = Voice.LEO) -> AudioResult:
         + (2).to_bytes(4, "little")
         + b"\x00\x00"
     )
-    return AudioResult(
-        audio_data=wav_header,
-        duration=0.001,
-        format=AudioFormat.WAV,
-        sample_rate=24000,
-        voice=voice,
-        cached=False,
-    )
+    return AudioResult(audio_data=wav_header, duration=0.001, cached=False, voice=voice)
 
 
 @pytest.fixture()
@@ -44,46 +38,35 @@ def settings_override() -> Settings:
     return Settings(
         host="127.0.0.1",
         port=8000,
-        tts_provider="lmstudio",
-        tts_backend="eurydice",  # Use eurydice backend for tests
-        default_voice="leo",
+        mlx_model="mlx-community/Kokoro-82M-bf16",
+        mlx_default_voice="af_heart",
         cors_origins="*",
     )
 
 
 @pytest.fixture()
-def mock_tts_service(settings_override: Settings) -> MagicMock:
+def mock_tts_service(settings_override: Settings) -> Iterator[MagicMock]:
+    # Catalogue and validation come from the real service; only model inference is faked.
+    real = MLXTTSService(settings_override)
     svc = MagicMock()
     svc.is_available = True
-    svc.provider_name = "lmstudio"
+    svc.provider_name = real.provider_name
 
-    # Mock generate to validate voices
     async def mock_generate(text: str, voice: str | None = None, model_id: str | None = None):
-        valid_voices = ["tara", "leah", "jess", "leo", "dan", "mia", "zac", "zoe"]
-        if voice and voice not in valid_voices:
-            raise ValueError(f"Invalid voice: {voice}")
-        return _make_fake_audio()
+        mid = model_id or settings_override.mlx_model
+        v = voice or settings_override.mlx_default_voice
+        if v not in {entry["id"] for entry in real.list_voices(mid)}:
+            raise ValueError(f"Invalid voice: '{v}'")
+        return _make_fake_audio(v)
 
     svc.generate = AsyncMock(side_effect=mock_generate)
     svc.startup = AsyncMock()
     svc.shutdown = AsyncMock()
+    svc.list_voices.side_effect = real.list_voices
+    svc.list_models.side_effect = real.list_models
 
-    # Mock list_voices to return test voices
-    svc.list_voices.return_value = [
-        {"id": "tara", "name": "Tara", "default": False},
-        {"id": "leah", "name": "Leah", "default": False},
-        {"id": "jess", "name": "Jess", "default": False},
-        {"id": "leo", "name": "Leo", "default": True},  # Matches settings_override default_voice
-        {"id": "dan", "name": "Dan", "default": False},
-        {"id": "mia", "name": "Mia", "default": False},
-        {"id": "zac", "name": "Zac", "default": False},
-        {"id": "zoe", "name": "Zoe", "default": False},
-    ]
-
-    # Mock list_models to return test models
-    svc.list_models.return_value = []
-
-    return svc
+    yield svc
+    real._executor.shutdown(wait=False)
 
 
 @pytest.fixture()
