@@ -28,7 +28,7 @@ async function init() {
     updateStatusBadge(health.available ?? false);
     // Load voices for the selected model
     try {
-        const {voices} = await sendBackground({
+        const { voices } = await sendBackground({
             action: 'get-voices',
             serverUrl,
             model: selectedModel,
@@ -60,7 +60,7 @@ async function readSelection(serverUrl, model) {
     const [tab] = await getTabs();
     if (!tab?.id)
         return;
-    const response = (await api.tabs.sendMessage(tab.id, {action: 'get-selection'}));
+    const response = (await api.tabs.sendMessage(tab.id, { action: 'get-selection' }));
     const text = response?.text?.trim();
     if (!text) {
         statusBadge.textContent = 'No text selected';

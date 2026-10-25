@@ -4,7 +4,7 @@
  *
  * Responsibilities:
  *  - Register the context-menu item
- *  - Fetch audio from the Eurydice/MLX server
+ *  - Fetch audio from the Lyra (Kokoro/MLX) server
  *  - Play audio injected into the active tab
  *  - Broadcast playback state and chunk highlights to content scripts
  */
@@ -27,6 +27,8 @@ const CONTEXT_MENU_ID = 'lyra-read-selection';
  * pressing Stop (which bumps the id) or starting a new read cancels the old one.
  */
 let playbackSession = 0;
+/** Tab that owns the current read, used when Stop is clicked from another tab. */
+let playbackTabId = null;
 /** AbortController for the in-flight chunk fetch, so Stop can cancel mid-request. */
 let activeFetch = null;
 // ---------------------------------------------------------------------------
@@ -79,7 +81,7 @@ async function handleMessage(message, sender) {
             return { ok: false, error: 'No active tab' };
         const text = message.text?.trim();
         if (!text)
-            return {ok: false, error: 'No text provided'};
+            return { ok: false, error: 'No text provided' };
         // The in-page selection button only sends `text`; fall back to the saved
         // settings for anything the caller (e.g. the popup) didn't specify.
         const settings = await getSettings();
@@ -92,12 +94,19 @@ async function handleMessage(message, sender) {
     if (action === 'stop') {
         // Invalidate any running read loop and abort an in-flight fetch.
         playbackSession++;
+        const readingTabId = playbackTabId;
+        playbackTabId = null;
         activeFetch?.abort();
         activeFetch = null;
         const tabId = sender.tab?.id ?? (await getActiveTabId());
-        if (tabId) {
-            await stopAudioInTab(tabId); // halt audio already playing in the page
-            notifyTab(tabId, { action: 'playback-stopped' });
+        const tabsToStop = new Set();
+        if (readingTabId !== null)
+            tabsToStop.add(readingTabId);
+        if (tabId !== null)
+            tabsToStop.add(tabId);
+        for (const targetTabId of tabsToStop) {
+            await stopAudioInTab(targetTabId); // halt audio already playing in the page
+            notifyTab(targetTabId, { action: 'playback-stopped' });
         }
         return { ok: true };
     }
@@ -127,9 +136,17 @@ async function handleMessage(message, sender) {
 async function speakInTab(tabId, text, voice, serverUrl, model) {
     // Claim this read; any older loop will see playbackSession move past its id.
     const session = ++playbackSession;
+    const previousTabId = playbackTabId;
+    playbackTabId = tabId;
     activeFetch?.abort();
     activeFetch = null;
+    if (previousTabId !== null && previousTabId !== tabId) {
+        await stopAudioInTab(previousTabId);
+        notifyTab(previousTabId, { action: 'playback-stopped' });
+    }
     await stopAudioInTab(tabId); // stop audio lingering from a previous read
+    if (session !== playbackSession)
+        return;
     notifyTab(tabId, { action: 'playback-started', text });
     try {
         const chunks = chunkText(text);
@@ -167,6 +184,10 @@ async function speakInTab(tabId, text, voice, serverUrl, model) {
     catch (err) {
         notifyTab(tabId, { action: 'chunk-highlight', text: null });
         notifyTab(tabId, { action: 'playback-error', error: err.message });
+    }
+    finally {
+        if (session === playbackSession && playbackTabId === tabId)
+            playbackTabId = null;
     }
 }
 /**
@@ -288,7 +309,7 @@ async function getActiveTabId() {
  */
 async function playAudioInTab(tabId, audioBase64) {
     try {
-        await api.tabs.sendMessage(tabId, {action: 'play-audio', audio: audioBase64});
+        await api.tabs.sendMessage(tabId, { action: 'play-audio', audio: audioBase64 });
     }
     catch {
         // Tab closed or no content script present — safe to ignore.
@@ -296,6 +317,6 @@ async function playAudioInTab(tabId, audioBase64) {
 }
 /** Tell the content script to halt any audio currently playing in the tab. */
 async function stopAudioInTab(tabId) {
-    notifyTab(tabId, {action: 'stop-audio'});
+    notifyTab(tabId, { action: 'stop-audio' });
 }
 export {};

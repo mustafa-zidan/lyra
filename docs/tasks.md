@@ -2,10 +2,9 @@
 
 ## In Progress
 
+- [ ] Verify `linux-cpu` / `linux-cuda` extras on real Linux hosts (install + Kokoro generation incl. misaki/espeak); only dependency resolution has been checked so far
 
 ## To Do
-
-- [ ] Verify `linux-cpu` / `linux-cuda` extras on real Linux hosts (install + Kokoro generation incl. misaki/espeak); only dependency resolution has been checked so far
 
 
 ## Backlog
@@ -41,3 +40,8 @@
 - [x] Drop eurydice-tts backend; MLX (Kokoro) is the only TTS backend (deps, config, service, tests, docs). Voice/model validation now in MLXTTSService (ValueError → 400).
 - [x] Platform extras `apple` / `linux-cpu` / `linux-cuda`. Each is marker-gated; cpu/cuda declared as a uv conflict (so `--all-extras` is unsupported); Linux torch (transitive via misaki[en] → spacy-curated-transformers, unused for inference) pinned to the PyTorch CPU index. Verified on macOS arm64: `uv sync --extra apple --extra dev`, Kokoro WAV for bm_george, ruff clean, 18 tests pass. Learned: the earlier "MLX is Apple-only" claim was wrong — mlx ships Linux cpu/cuda wheels.
 - [x] Standalone setup: install eurydice-tts>=0.2.0 from PyPI instead of `../eurydice` path source (fresh clones failed `uv sync`); verified fresh-clone `uv sync --all-extras --locked` + Kokoro generation + pytest. Note: espeak-ng fails if the venv path is very long (~160+ chars) — not an issue for normal checkouts.
+- [x] Prevent overlapping read-aloud and Test sound audio: track the active playback tab, stop prior playback across tabs, resolve pending audio on stop, and abort/release previous Test sound requests. Regenerate extension JavaScript and validate with the planned quality gates. Assumption: session ownership must prevent stale completion from clearing a newer playback session.
+
+## Notes
+
+- Reflection/verification: implemented cross-tab playback ownership, pending content-script audio resolution on stop, and Test sound fetch/audio cancellation and release; regenerated extension scripts. `pnpm typecheck`, `pnpm lint:js`, `uv run ruff check .`, `uv run ruff format --check --diff .`, and `uv run pytest` pass (18 tests). `pnpm format:js:check` flags five existing-style files including untouched `src/chunk-text.ts` and `src/popup/popup.ts`; formatting whole files would create unrelated churn. `pnpm test:ext` reached Playwright but 16 tests could not launch because configured Chromium is missing (6 passed). Follow-up: rerun extension tests after Chromium is installed; no functionality follow-up identified.

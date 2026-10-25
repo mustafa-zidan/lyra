@@ -294,14 +294,15 @@
         for (let i = 0; i < binary.length; i++)
             buf[i] = binary.charCodeAt(i);
         const ctx = new AudioContext();
-        const state = {ctx, source: null, stopped: false};
+        const state = { ctx, source: null, stopped: false, finish: null };
         currentAudio = state;
         if (ctx.state === 'suspended')
             await ctx.resume();
         let decoded;
         try {
             decoded = await ctx.decodeAudioData(buf.buffer);
-        } catch {
+        }
+        catch {
             if (ctx.state !== 'closed')
                 ctx.close();
             if (currentAudio === state)
@@ -319,13 +320,16 @@
         source.buffer = decoded;
         source.connect(ctx.destination);
         await new Promise((resolve) => {
-            source.onended = () => {
+            const finish = () => {
+                state.finish = null;
                 if (ctx.state !== 'closed')
                     ctx.close();
                 if (currentAudio === state)
                     currentAudio = null;
                 resolve();
             };
+            state.finish = finish;
+            source.onended = finish;
             source.start(0);
         });
     }
@@ -337,13 +341,16 @@
         state.stopped = true;
         try {
             state.source?.stop();
-        } catch {
+        }
+        catch {
             // source may not have started yet — ignore
         }
+        state.finish?.();
         try {
             if (state.ctx.state !== 'closed')
                 state.ctx.close();
-        } catch {
+        }
+        catch {
             // context already closed — ignore
         }
         currentAudio = null;
@@ -438,8 +445,9 @@
         if (!text)
             return;
         try {
-            await api.runtime.sendMessage({action: 'speak', text});
-        } catch {
+            await api.runtime.sendMessage({ action: 'speak', text });
+        }
+        catch {
             // Background unavailable — ignore.
         }
     }
@@ -465,7 +473,8 @@
         const sel = window.getSelection();
         if (!sel || sel.isCollapsed || !sel.toString().trim()) {
             hideSelectionButton();
-        } else if (!isMouseDown) {
+        }
+        else if (!isMouseDown) {
             // Keyboard-driven selection (Shift+Arrows, Ctrl+A …).
             showSelectionButton();
         }
@@ -497,8 +506,8 @@
                 // so it can sequence the next chunk. `return true` keeps the channel
                 // open for the async sendResponse (required by Chrome).
                 playAudio(message.audio)
-                    .then(() => sendResponse({done: true}))
-                    .catch(() => sendResponse({done: false}));
+                    .then(() => sendResponse({ done: true }))
+                    .catch(() => sendResponse({ done: false }));
                 return true;
             case 'stop-audio':
                 stopAudio();

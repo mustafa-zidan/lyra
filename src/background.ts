@@ -33,6 +33,8 @@ const CONTEXT_MENU_ID = 'lyra-read-selection';
  * pressing Stop (which bumps the id) or starting a new read cancels the old one.
  */
 let playbackSession = 0;
+/** Tab that owns the current read, used when Stop is clicked from another tab. */
+let playbackTabId: number | null = null;
 /** AbortController for the in-flight chunk fetch, so Stop can cancel mid-request. */
 let activeFetch: AbortController | null = null;
 
@@ -151,13 +153,18 @@ async function handleMessage(
   if (action === 'stop') {
     // Invalidate any running read loop and abort an in-flight fetch.
     playbackSession++;
+    const readingTabId = playbackTabId;
+    playbackTabId = null;
     activeFetch?.abort();
     activeFetch = null;
 
     const tabId = sender.tab?.id ?? (await getActiveTabId());
-    if (tabId) {
-      await stopAudioInTab(tabId); // halt audio already playing in the page
-      notifyTab(tabId, {action: 'playback-stopped'});
+    const tabsToStop = new Set<number>();
+    if (readingTabId !== null) tabsToStop.add(readingTabId);
+    if (tabId !== null) tabsToStop.add(tabId);
+    for (const targetTabId of tabsToStop) {
+      await stopAudioInTab(targetTabId); // halt audio already playing in the page
+      notifyTab(targetTabId, {action: 'playback-stopped'});
     }
     return {ok: true};
   }
@@ -199,9 +206,16 @@ async function speakInTab(
 ): Promise<void> {
   // Claim this read; any older loop will see playbackSession move past its id.
   const session = ++playbackSession;
+  const previousTabId = playbackTabId;
+  playbackTabId = tabId;
   activeFetch?.abort();
   activeFetch = null;
+  if (previousTabId !== null && previousTabId !== tabId) {
+    await stopAudioInTab(previousTabId);
+    notifyTab(previousTabId, {action: 'playback-stopped'});
+  }
   await stopAudioInTab(tabId); // stop audio lingering from a previous read
+  if (session !== playbackSession) return;
 
   notifyTab(tabId, {action: 'playback-started', text});
 
@@ -236,6 +250,8 @@ async function speakInTab(
   } catch (err) {
     notifyTab(tabId, {action: 'chunk-highlight', text: null});
     notifyTab(tabId, {action: 'playback-error', error: (err as Error).message});
+  } finally {
+    if (session === playbackSession && playbackTabId === tabId) playbackTabId = null;
   }
 }
 

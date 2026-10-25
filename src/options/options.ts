@@ -25,6 +25,10 @@ const serverStatus = document.getElementById('server-status') as HTMLElement;
 const saveMsg = document.getElementById('save-msg') as HTMLElement;
 const testStatus = document.getElementById('test-status') as HTMLElement;
 
+let testAudio: HTMLAudioElement | null = null;
+let testAudioUrl: string | null = null;
+let testFetch: AbortController | null = null;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -267,6 +271,23 @@ async function getSettings(): Promise<Settings> {
 // ---------------------------------------------------------------------------
 
 async function testSound(): Promise<void> {
+    testFetch?.abort();
+    testFetch = null;
+    if (testAudio) {
+        testAudio.pause();
+        testAudio.onended = null;
+        testAudio.onerror = null;
+        testAudio.removeAttribute('src');
+        testAudio.load();
+        testAudio = null;
+    }
+    if (testAudioUrl) {
+        URL.revokeObjectURL(testAudioUrl);
+        testAudioUrl = null;
+    }
+
+    const controller = new AbortController();
+    testFetch = controller;
     const serverUrl = serverUrlInput.value.trim() || DEFAULT_SERVER_URL;
     const voice = defaultVoiceSelect.value || DEFAULT_VOICE;
     const model = modelSelect.value || DEFAULT_MODEL;
@@ -292,6 +313,7 @@ async function testSound(): Promise<void> {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(body),
+            signal: controller.signal,
         });
 
         if (!response.ok) {
@@ -301,13 +323,19 @@ async function testSound(): Promise<void> {
 
         // Get the audio data as blob
         const audioBlob = await response.blob();
+        if (controller.signal.aborted) return;
         const audioUrl = URL.createObjectURL(audioBlob);
+        testAudioUrl = audioUrl;
 
         // Play the audio using HTML5 Audio
         const audio = new Audio(audioUrl);
+        testAudio = audio;
 
         audio.onended = () => {
+            if (testAudio !== audio) return;
             URL.revokeObjectURL(audioUrl);
+            testAudioUrl = null;
+            testAudio = null;
             testStatus.textContent = 'Test sound played successfully!';
             testStatus.className = 'test-status test-status--success';
             setTimeout(() => {
@@ -316,17 +344,39 @@ async function testSound(): Promise<void> {
         };
 
         audio.onerror = () => {
+            if (testAudio !== audio) return;
             URL.revokeObjectURL(audioUrl);
-            throw new Error('Failed to play audio');
+            testAudioUrl = null;
+            testAudio = null;
+            testStatus.textContent = 'Error: Failed to play audio';
+            testStatus.className = 'test-status test-status--error';
+            setTimeout(() => {
+                testStatus.style.display = 'none';
+            }, 5000);
         };
 
         await audio.play();
     } catch (err) {
+        if (controller.signal.aborted || testFetch !== controller) return;
+        if (testAudio) {
+            testAudio.pause();
+            testAudio.onended = null;
+            testAudio.onerror = null;
+            testAudio.removeAttribute('src');
+            testAudio.load();
+            testAudio = null;
+        }
+        if (testAudioUrl) {
+            URL.revokeObjectURL(testAudioUrl);
+            testAudioUrl = null;
+        }
         testStatus.textContent = `Error: ${(err as Error).message}`;
         testStatus.className = 'test-status test-status--error';
         setTimeout(() => {
             testStatus.style.display = 'none';
         }, 5000);
+    } finally {
+        if (testFetch === controller) testFetch = null;
     }
 }
 

@@ -325,6 +325,7 @@
         ctx: AudioContext;
         source: AudioBufferSourceNode | null;
         stopped: boolean;
+        finish: (() => void) | null;
     }
 
     let currentAudio: AudioState | null = null;
@@ -342,7 +343,7 @@
         for (let i = 0; i < binary.length; i++) buf[i] = binary.charCodeAt(i);
 
         const ctx = new AudioContext();
-        const state: AudioState = {ctx, source: null, stopped: false};
+        const state: AudioState = {ctx, source: null, stopped: false, finish: null};
         currentAudio = state;
 
         if (ctx.state === 'suspended') await ctx.resume();
@@ -368,11 +369,14 @@
         source.connect(ctx.destination);
 
         await new Promise<void>((resolve) => {
-            source.onended = () => {
+            const finish = () => {
+                state.finish = null;
                 if (ctx.state !== 'closed') ctx.close();
                 if (currentAudio === state) currentAudio = null;
                 resolve();
             };
+            state.finish = finish;
+            source.onended = finish;
             source.start(0);
         });
     }
@@ -387,6 +391,7 @@
         } catch {
             // source may not have started yet — ignore
         }
+        state.finish?.();
         try {
             if (state.ctx.state !== 'closed') state.ctx.close();
         } catch {
