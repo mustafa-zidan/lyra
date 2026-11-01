@@ -3,8 +3,8 @@
  * Split text at sentence boundaries into chunks of at most `maxLen` characters.
  * Recognises Latin, CJK (。！？) and Devanagari (।) sentence marks.
  *
- * Exported as an ES module so it can be imported in Node.js unit tests while
- * background.ts remains a plain script for cross-browser compatibility.
+ * The background service worker (an ES module) imports this, and so do the Node.js
+ * unit tests, so the tests cover the code that actually runs.
  */
 export function chunkText(text: string, maxLen = 500): string[] {
   const sentences = text.match(/[^.!?。！？｡।]+[.!?。！？｡।]*/g) ?? [text];

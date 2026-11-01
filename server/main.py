@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from server.api.models import RootResponse
 from server.api.routes import health, models, tts, voices
-from server.core.config import Settings, settings
+from server.core.config import ENV_PREFIX, Settings, legacy_env_vars, settings
 from server.core.mlx_tts_service import MLXTTSService
 
 logging.basicConfig(level=settings.log_level.upper())
@@ -22,6 +22,12 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage startup and shutdown of the TTS service."""
     cfg: Settings = app.state.settings
+    if legacy := legacy_env_vars():
+        logger.warning(
+            "%s use the old EURYDICE_ prefix; rename them to %s… (still read for now)",
+            ", ".join(legacy),
+            ENV_PREFIX,
+        )
 
     tts_service = MLXTTSService(cfg)
     app.state.tts = tts_service
@@ -53,6 +59,7 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,
+        allow_origin_regex=cfg.cors_origin_regex or None,
         allow_credentials=False,
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type", "Accept"],

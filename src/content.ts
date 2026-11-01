@@ -29,6 +29,16 @@
   let textIndex: TextEntry[] = [];
   /** Concatenated plain text of the whole body, matching textIndex offsets. */
   let fullText = '';
+  /** `fullText` with whitespace runs collapsed to one space, for matching chunks. */
+  let normText = '';
+  /** normText index → fullText index (see buildNormalisationMap). */
+  let normToOrig: number[] = [];
+  /**
+   * Where the last highlighted chunk ended in normText. Chunks arrive in reading order,
+   * so the next one is searched for from here: a sentence that also appears earlier on the
+   * page (a repeated heading, a nav label) must not pull the highlight back to that copy.
+   */
+  let matchCursor = 0;
   /** Whether the CSS Custom Highlight API is available. */
   const hasCSSHighlight =
     typeof CSS !== 'undefined' &&
@@ -86,6 +96,9 @@
       fullText += text;
       offset += text.length;
     }
+    normText = fullText.replace(/\s+/g, ' ');
+    normToOrig = buildNormalisationMap(fullText);
+    matchCursor = 0;
   }
 
   /**
@@ -122,15 +135,15 @@
     clearHighlight();
     if (!chunkText || textIndex.length === 0) return;
 
-    // Normalise whitespace for matching
+    // Normalise whitespace for matching. Search forward from the previous chunk first;
+    // only if that fails (e.g. the page changed) fall back to the first match on the page.
     const needle = chunkText.trim().replace(/\s+/g, ' ');
-    const haystack = fullText.replace(/\s+/g, ' ');
-    const idx = haystack.indexOf(needle);
+    let idx = normText.indexOf(needle, matchCursor);
+    if (idx === -1) idx = normText.indexOf(needle);
     if (idx === -1) return;
+    matchCursor = idx + needle.length;
 
     // Map normalised offsets back to original fullText positions.
-    // Walk fullText, tracking where each normalised character maps to.
-    const normToOrig = buildNormalisationMap(fullText);
     const start = normToOrig[idx];
     const end =
       idx + needle.length < normToOrig.length ? normToOrig[idx + needle.length] : fullText.length;

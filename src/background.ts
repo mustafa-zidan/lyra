@@ -9,6 +9,8 @@
  *  - Broadcast playback state and chunk highlights to content scripts
  */
 
+import { chunkText } from './chunk-text.js';
+
 // Cross-browser API shim (Firefox uses `browser`, Chrome uses `chrome`).
 // Both are declared as globals in eslint.config.js no import needed.
 const api: typeof chrome | null =
@@ -393,30 +395,6 @@ async function fetchHealth(serverUrl: string): Promise<HealthStatus> {
   } catch {
     return { available: false, status: 'unreachable' };
   }
-}
-
-// ---------------------------------------------------------------------------
-// Text chunking
-// ---------------------------------------------------------------------------
-
-/**
- * Split text at sentence boundaries into chunks of at most `maxLen` characters.
- * Recognises Latin, CJK (。！？) and Devanagari (।) sentence marks.
- */
-function chunkText(text: string, maxLen = 500): string[] {
-  const sentences = text.match(/[^.!?。！？｡।]+[.!?。！？｡।]*/g) ?? [text];
-  const chunks: string[] = [];
-  let current = '';
-
-  for (const sentence of sentences) {
-    if (current.length + sentence.length > maxLen && current.length > 0) {
-      chunks.push(current.trim());
-      current = '';
-    }
-    current += sentence;
-  }
-  if (current.trim()) chunks.push(current.trim());
-  return chunks.length > 0 ? chunks : [text];
 }
 
 // ---------------------------------------------------------------------------
