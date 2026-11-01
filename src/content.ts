@@ -41,6 +41,40 @@
    * page (a repeated heading, a nav label) must not pull the highlight back to that copy.
    */
   let matchCursor = 0;
+
+  /** A word of the page (or of a chunk), lowercased, with its [start, end) in the source text. */
+  interface Word {
+    text: string;
+    start: number;
+    end: number;
+  }
+
+  /** Words of `fullText`, for the fuzzy fallback when a chunk isn't on the page verbatim. */
+  let pageWords: Word[] = [];
+  /** Word text → its indices in pageWords, ascending. */
+  let wordPositions = new Map<string, number[]>();
+
+  /**
+   * Runs of letters and digits; each Chinese/Japanese character is a word of its own,
+   * since those scripts don't put spaces between words. Punctuation is dropped, so smart
+   * and straight quotes, dashes and footnote brackets can't stop a match.
+   */
+  const WORD_RE =
+    /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]|(?:(?![\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}])[\p{L}\p{N}\p{M}])+/gu;
+
+  /** Most words the fuzzy match may skip, on both sides together, at one mismatch. */
+  const MAX_SKIP = 3;
+  /** Most page occurrences of one word tried as an anchor (bounds work on common words). */
+  const MAX_ANCHOR_CANDIDATES = 50;
+
+  function toWords(text: string): Word[] {
+    return Array.from(text.matchAll(WORD_RE), (m) => ({
+      text: m[0].toLowerCase(),
+      start: m.index,
+      end: m.index + m[0].length,
+    }));
+  }
+
   /** Whether the CSS Custom Highlight API is available. */
   const hasCSSHighlight =
     typeof CSS !== 'undefined' &&
@@ -101,6 +135,26 @@
     normText = fullText.replace(/\s+/g, ' ');
     normToOrig = buildNormalisationMap(fullText);
     matchCursor = 0;
+
+    pageWords = toWords(fullText);
+    wordPositions = new Map();
+    pageWords.forEach((w, i) => {
+      const list = wordPositions.get(w.text);
+      if (list) list.push(i);
+      else wordPositions.set(w.text, [i]);
+    });
+  }
+
+  /** First index in ascending `arr` whose key is >= `value`. */
+  function lowerBound<T>(arr: T[], value: number, key: (item: T) => number): number {
+    let lo = 0;
+    let hi = arr.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (key(arr[mid]) < value) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
   }
 
   /**
@@ -137,18 +191,9 @@
     clearHighlight();
     if (!chunkText || textIndex.length === 0) return;
 
-    // Normalise whitespace for matching. Search forward from the previous chunk first;
-    // only if that fails (e.g. the page changed) fall back to the first match on the page.
-    const needle = chunkText.trim().replace(/\s+/g, ' ');
-    let idx = normText.indexOf(needle, matchCursor);
-    if (idx === -1) idx = normText.indexOf(needle);
-    if (idx === -1) return;
-    matchCursor = idx + needle.length;
-
-    // Map normalised offsets back to original fullText positions.
-    const start = normToOrig[idx];
-    const end =
-      idx + needle.length < normToOrig.length ? normToOrig[idx + needle.length] : fullText.length;
+    const span = findExact(chunkText) ?? findFuzzy(chunkText);
+    if (!span) return;
+    const [start, end] = span;
 
     const range = buildRange(start, end);
     if (!range) return;
@@ -170,6 +215,135 @@
     } else {
       applyMarkFallback(range);
     }
+  }
+
+  /**
+   * Find the chunk verbatim (whitespace collapsed) and return its [start, end) in
+   * fullText. Searches forward from the previous chunk first; only if that fails (e.g. the
+   * page changed) falls back to the first match on the page.
+   */
+  function findExact(chunkText: string): [number, number] | null {
+    const needle = chunkText.trim().replace(/\s+/g, ' ');
+    let idx = normText.indexOf(needle, matchCursor);
+    if (idx === -1) idx = normText.indexOf(needle);
+    if (idx === -1) return null;
+    matchCursor = idx + needle.length;
+
+    // Map normalised offsets back to original fullText positions.
+    const start = normToOrig[idx];
+    const end =
+      idx + needle.length < normToOrig.length ? normToOrig[idx + needle.length] : fullText.length;
+    return [start, end];
+  }
+
+  /**
+   * Find a chunk that isn't on the page verbatim: Readability dropped or added text
+   * (hidden elements, footnote markers), quotes or dashes differ, or a chunk was cut
+   * mid-word. Compares words only, after the previous chunk first and then from the top.
+   */
+  function findFuzzy(chunkText: string): [number, number] | null {
+    const from = lowerBound(pageWords, normToOrig[matchCursor] ?? fullText.length, (w) => w.start);
+    const chunk = toWords(chunkText);
+    const words = findFuzzyWords(chunk, from) ?? findFuzzyWords(chunk, 0);
+    if (!words) return null;
+
+    let start = pageWords[words[0]].start;
+    let end = pageWords[words[1]].end;
+    // Take in punctuation touching the span ("“Don’t", "died."), but not whitespace or
+    // letters: in Chinese or Japanese that would swallow the next sentence.
+    const isPunct = (c: string) => /[^\s\p{L}\p{N}\p{M}]/u.test(c);
+    while (start > 0 && isPunct(fullText[start - 1])) start--;
+    while (end < fullText.length && isPunct(fullText[end])) end++;
+
+    matchCursor = lowerBound(normToOrig, end, (i) => i);
+    return [start, end];
+  }
+
+  /**
+   * Align the chunk's words with the page's at or after page word `from`, and return the
+   * first and last matched page word indices.
+   *
+   * Anchors on the longest run of the chunk's words that appears verbatim on the page
+   * (nearest to `from` on a tie), then extends it both ways, stepping over up to MAX_SKIP
+   * words that only one side has (a footnote marker, a hidden label) or that differ. The
+   * chunk's first and last words may be partial, since a chunk can be cut mid-word. The
+   * match counts only if at least half of the chunk's words were matched.
+   */
+  function findFuzzyWords(chunk: Word[], from: number): [number, number] | null {
+    const n = chunk.length;
+    if (n === 0) return null;
+    const c = chunk.map((w) => w.text);
+
+    let bestLen = 0;
+    let bestChunk = 0;
+    let bestPage = 0;
+    for (let i = 0; i < n; i++) {
+      const positions = wordPositions.get(c[i]);
+      if (!positions) continue;
+      const first = lowerBound(positions, from, (p) => p);
+      const last = Math.min(positions.length, first + MAX_ANCHOR_CANDIDATES);
+      for (let k = first; k < last; k++) {
+        const p = positions[k];
+        let len = 0;
+        while (i + len < n && pageWords[p + len]?.text === c[i + len]) len++;
+        if (len > bestLen || (len === bestLen && p < bestPage)) {
+          bestLen = len;
+          bestChunk = i;
+          bestPage = p;
+        }
+      }
+    }
+    if (bestLen < Math.min(3, n)) return null;
+
+    const same = (ci: number, pj: number): boolean => {
+      const page = pageWords[pj]?.text;
+      if (page === undefined) return false;
+      return (
+        page === c[ci] ||
+        (ci === n - 1 && page.startsWith(c[ci])) ||
+        (ci === 0 && page.endsWith(c[ci]))
+      );
+    };
+
+    /**
+     * Walk from (ci, pj) in direction `dir`, matching words and skipping over mismatches.
+     * Returns the last page word matched (or `lastMatched` if none) and how many matched.
+     */
+    const extend = (ci: number, pj: number, dir: 1 | -1, lastMatched: number): [number, number] => {
+      let matched = 0;
+      const inChunk = (i: number) => i >= 0 && i < n;
+      while (inChunk(ci) && pj >= 0 && pj < pageWords.length) {
+        if (same(ci, pj)) {
+          matched++;
+          lastMatched = pj;
+          ci += dir;
+          pj += dir;
+          continue;
+        }
+        // Smallest skip (chunk words a, page words b) that lines the two up again.
+        let step: [number, number] | null = null;
+        for (let total = 1; total <= MAX_SKIP && !step; total++) {
+          for (let a = 0; a <= total && !step; a++) {
+            const ca = ci + a * dir;
+            if (inChunk(ca) && same(ca, pj + (total - a) * dir)) step = [a, total - a];
+          }
+        }
+        if (!step) break;
+        ci += step[0] * dir;
+        pj += step[1] * dir;
+      }
+      return [lastMatched, matched];
+    };
+
+    const [lastPage, after] = extend(
+      bestChunk + bestLen,
+      bestPage + bestLen,
+      1,
+      bestPage + bestLen - 1,
+    );
+    const [firstPage, before] = extend(bestChunk - 1, bestPage - 1, -1, bestPage);
+    if (bestLen + after + before < n / 2) return null;
+    return [firstPage, lastPage];
   }
 
   /**

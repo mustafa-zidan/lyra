@@ -11,6 +11,18 @@
 
 ## Done
 
+- [x] Highlight chunks that don't match the page verbatim (#12). `highlightChunk` tries the exact whitespace-collapsed
+  match first, then a word-level fuzzy match: words are letter/digit runs, lowercased (each Han/kana character is its
+  own word, since CJK has no spaces), so quotes, dashes and footnote brackets drop out. The longest run of chunk words
+  found on the page after the previous chunk anchors the match, and it extends both ways, skipping up to 3 words on
+  either side at each mismatch (footnote markers, hidden text). The chunk's first and last words may be partial, for
+  chunks cut mid-word. A match needs an anchor of 3 words (or the whole chunk if shorter) and half the chunk's words,
+  so a chunk sharing a few words with the page isn't highlighted. The page's word list and word → positions map are
+  built once per read. Verified: 6 new Playwright tests (footnote marker, smart quotes/dashes, hidden text, mid-word
+  cuts, Japanese with a missing character, negative case); the 5 positive ones fail on the old content script. 41
+  Playwright tests, typecheck/ESLint/Prettier, ruff, 54 pytest all clean. Not done: the issue's "better still" idea
+  of mapping Readability's output back to DOM ranges at read start, which would remove the string search entirely.
+
 - [x] Security and code-quality pass. (1) CORS no longer defaults to `*`: browser extension origins
   (`chrome-extension://`, `moz-extension://`, `safari-web-extension://`) are allowed by an anchored regex, web pages
   only via `LYRA_CORS_ORIGINS`. (2) The background worker imports the tested `chunk-text.ts` instead of its own copy
