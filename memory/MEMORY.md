@@ -10,7 +10,7 @@ Web server + browser extension for Kokoro TTS via `mlx-audio` (Apple Silicon tes
 ## Key Files
 - `pyproject.toml` — uv project config; TTS runtime via platform extras `apple` / `linux-cpu` / `linux-cuda` (marker-gated; cpu+cuda conflict; Linux torch from PyTorch CPU index). CI installs only `dev` (TTS mocked)
 - `server/main.py` — FastAPI app factory + lifespan
-- `server/core/config.py` — pydantic-settings, env prefix `EURYDICE_` (kept for backwards compat)
+- `server/core/config.py` — pydantic-settings, env prefix `LYRA_`, old `EURYDICE_` still read as a lower-priority fallback (warns at startup); CORS allows extension origins by regex, web pages only via `LYRA_CORS_ORIGINS`
 - `server/core/mlx_tts_service.py` — MLXTTSService: Kokoro model/voice registry, validation (ValueError → 400), generation
 - `server/api/routes/tts.py` — POST /tts/generate (returns binary WAV)
 - `extension/manifest.json` — MV3 with `"type": "module"` for service worker
@@ -63,7 +63,7 @@ Web server + browser extension for Kokoro TTS via `mlx-audio` (Apple Silicon tes
 - ESLint config: `eslint.config.js` — TypeScript-ESLint on src/, ignores extension/**/*.js
 
 ## TypeScript Architecture
-- Source in `src/`, compiled output in `extension/` (gitignored JS files)
+- Source in `src/`, compiled output in `extension/` (gitignored and untracked JS files; `build:ext` runs tsc first)
 - All .ts files are ES modules (have `export {}` at minimum)
 - `src/types.d.ts` declares global `browser: typeof chrome | undefined`
 - `background.ts` and `popup.ts`/`options.ts` use `api = typeof browser !== 'undefined' ? browser : chrome`

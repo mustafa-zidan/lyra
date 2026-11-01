@@ -11,6 +11,18 @@
 
 ## Done
 
+- [x] Security and code-quality pass. (1) CORS no longer defaults to `*`: browser extension origins
+  (`chrome-extension://`, `moz-extension://`, `safari-web-extension://`) are allowed by an anchored regex, web pages
+  only via `LYRA_CORS_ORIGINS`. (2) The background worker imports the tested `chunk-text.ts` instead of its own copy
+  (Firefox minimum raised to 112 for module background scripts). (3) Compiled `extension/*.js` untracked (they were
+  already gitignored); `build:ext` runs tsc first, so release ZIPs can't ship stale JS. (4) Env prefix `LYRA_`, with
+  `EURYDICE_` still read below it (env and `.env`) and a startup warning. (5) Highlight fixes + tests: chunks are
+  matched forward from the previous chunk, so a repeated sentence (nav label, repeated heading) no longer pulls the
+  highlight back up the page; whitespace map is built once per read instead of per chunk. New Playwright tests drive
+  the content script from the service worker (odd whitespace, inline elements, repeated sentences, reset, clear).
+  Verified: 54 pytest (1 skipped), ruff clean, typecheck/eslint/prettier clean, 29 Playwright tests in Chromium; the
+  repeated-sentence test fails on the old content script.
+
 - [x] Initialize uv project: pyproject.toml, .python-version, .gitignore
 - [x] Server config: server/core/config.py (pydantic-settings, env vars)
 - [x] TTS service singleton: server/core/tts_service.py (Eurydice client lifecycle)
