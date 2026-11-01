@@ -53,6 +53,8 @@ const activeFetches = new Map<number, Set<AbortController>>();
 // Types
 // ---------------------------------------------------------------------------
 
+type PlaybackCommand = 'toggle-pause' | 'back' | 'forward';
+
 interface Voice {
   id: string;
   name: string;
@@ -68,7 +70,9 @@ interface ModelInfo {
 }
 
 interface ExtMessage {
-  action: 'speak' | 'stop' | 'generate' | 'get-voices' | 'get-models' | 'health';
+  action: 'speak' | 'stop' | 'control' | 'generate' | 'get-voices' | 'get-models' | 'health';
+  /** For `control`: what to do with the read in progress. */
+  command?: PlaybackCommand;
   text?: string;
   voice?: string;
   model?: string;
@@ -161,6 +165,11 @@ async function handleMessage(
     // tab), and the worker may have restarted since the read began, so tell every tab.
     endAllReads();
     for (const tabId of await getAllTabIds()) notifyTab(tabId, { action: 'playback-stopped' });
+    return { ok: true };
+  }
+
+  if (action === 'control') {
+    if (message.command) await controlPlayback(message.command);
     return { ok: true };
   }
 
@@ -280,6 +289,15 @@ async function generateChunk(tabId: number, message: ExtMessage): Promise<Record
     fetches.delete(controller);
     if (fetches.size === 0) activeFetches.delete(tabId);
   }
+}
+
+/**
+ * Pause/resume or skip the read in progress. Like Stop, it goes to every tab when the
+ * worker has lost track of which tab is reading (it may have restarted since).
+ */
+async function controlPlayback(command: PlaybackCommand): Promise<void> {
+  const tabIds = activeReads.size ? [...activeReads.keys()] : await getAllTabIds();
+  for (const tabId of tabIds) notifyTab(tabId, { action: 'playback-control', command });
 }
 
 /** Mark every read as ended and abort their in-flight fetches. */

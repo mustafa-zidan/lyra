@@ -146,6 +146,9 @@ pnpm run build:ts
 - Select text and click **Listen**, or right-click it and choose **Read selection aloud with
   Lyra**.
 - In the popup: **Read selection** or **Read page** (the article, extracted with Readability).
+- While reading, the status bar (and the popup) has **back**, **pause/resume** and **forward**.
+  Back goes to the previous passage, or restarts the current one if it has played for more than
+  two seconds, so a hard sentence is one click away.
 - **Speed** (popup and settings, 0.5× – 2×) applies from the next passage, so you can change it
   mid-read.
 - **Highlight** (settings): the passage colour (presets or a custom colour), background,

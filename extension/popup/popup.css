@@ -240,6 +240,20 @@ body {
     border-color: var(--danger);
 }
 
+.playback {
+    display: flex;
+    gap: 9px;
+}
+
+.btn--icon {
+    width: auto;
+    flex: none;
+    padding: 11px 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
 /* Footer */
 .footer {
     padding: 12px 18px 16px;

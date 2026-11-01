@@ -35,6 +35,7 @@ export default defineConfig({
         '**/highlight.test.js',
         '**/popup.test.js',
         '**/reading.test.js',
+        '**/playback.test.js',
       ],
       use: {
         // Actual context launch is handled by the extension-context fixture
