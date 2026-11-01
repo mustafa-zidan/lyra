@@ -81,22 +81,46 @@
     typeof (CSS as { highlights?: unknown }).highlights !== 'undefined' &&
     typeof Highlight !== 'undefined';
 
-  /** Inject the ::highlight(lyra-reading) style once. */
+  /** The saved settings this script uses; the defaults match settings.ts. */
+  interface DisplaySettings {
+    highlightColor: string;
+    highlightStyle: 'background' | 'underline' | 'both';
+    highContrast: boolean;
+  }
+
+  const display: DisplaySettings = {
+    highlightColor: '#dcd7fc',
+    highlightStyle: 'background',
+    highContrast: false,
+  };
+
+  /** Only #rrggbb from storage goes into the stylesheet. */
+  const safeColor = (value: string, fallback: string) =>
+    /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
+
+  /** Declarations for `::highlight(lyra-reading)`, from the user's colour, style and contrast. */
+  function highlightCss(): string {
+    const color = safeColor(display.highlightColor, '#dcd7fc');
+    if (display.highContrast) return 'background-color: #1b1b2a; color: #ffffff;';
+    const underline = `text-decoration: underline 3px color-mix(in srgb, ${color} 55%, #000); text-underline-offset: 3px;`;
+    if (display.highlightStyle === 'underline') return underline;
+    if (display.highlightStyle === 'both') return `background-color: ${color}; ${underline}`;
+    return `background-color: ${color};`;
+  }
+
+  /** Inject (or refresh) the highlight styles. */
   function injectHighlightStyle(): void {
-    if (document.getElementById('__lyra-hl-style')) return;
-    const style = document.createElement('style');
-    style.id = '__lyra-hl-style';
+    let style = document.getElementById('__lyra-hl-style');
+    if (!style) {
+      style = document.createElement('style');
+      style.id = '__lyra-hl-style';
+      document.head.appendChild(style);
+    }
+    const chunk = highlightCss();
     style.textContent = `
-      ::highlight(lyra-reading) {
-        background-color: rgba(109, 94, 240, 0.22);
-      }
-      .lyra-reading-mark {
-        background-color: rgba(109, 94, 240, 0.22);
-        color: inherit;
-        border-radius: 3px;
-      }
+      ::highlight(lyra-reading) { ${chunk} }
+      .lyra-reading-mark { ${chunk} color: inherit; border-radius: 3px; }
     `;
-    document.head.appendChild(style);
   }
 
   /**
@@ -506,6 +530,25 @@
   const api: typeof chrome = typeof browser !== 'undefined' ? browser : chrome;
 
   injectHighlightStyle();
+
+  /** Pick up saved display settings now and whenever they change. */
+  function loadDisplaySettings(values: Partial<DisplaySettings>): void {
+    for (const key of Object.keys(display) as (keyof DisplaySettings)[]) {
+      if (values[key] !== undefined)
+        (display as unknown as Record<string, unknown>)[key] = values[key];
+    }
+    injectHighlightStyle();
+  }
+  api.storage.local
+    .get(Object.keys(display))
+    .then((items) => loadDisplaySettings(items as Partial<DisplaySettings>))
+    .catch(() => {});
+  api.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local') return;
+    const values: Record<string, unknown> = {};
+    for (const [key, change] of Object.entries(changes)) values[key] = change.newValue;
+    loadDisplaySettings(values as Partial<DisplaySettings>);
+  });
 
   // ---------------------------------------------------------------------------
   // Reading (Web Audio API, runs here in the content script)

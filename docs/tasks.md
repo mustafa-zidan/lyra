@@ -9,7 +9,6 @@
 
 Accessibility issues (#3–#11), in dependency order:
 
-- [ ] #8 Highlight colour/style: presets + custom colour, background/underline/both, high contrast
 - [ ] #5 Pause/resume and back/forward a chunk in the status bar and popup
 - [ ] #6 Keyboard shortcuts (`commands`): read selection, read page, pause/resume, stop
 - [ ] #7 "Read from here" context-menu item and Alt+click a paragraph
@@ -22,6 +21,13 @@ Accessibility issues (#3–#11), in dependency order:
 ## Backlog
 
 ## Done
+
+- [x] Highlight colour and style (#8). Options page Highlight card: five preset swatches plus a custom
+  colour picker, style (background / underline / both), high contrast (dark highlight, light text), with
+  a live preview. The content script keeps its own copy of the display defaults (it's a classic script
+  and can't import `settings.ts`), reads them at load and rebuilds `#__lyra-hl-style` on
+  `storage.onChanged`, so open pages restyle immediately. Only `#rrggbb` values reach the stylesheet.
+  Separate word colour deferred to #3. Verified: 3 new Playwright tests, screenshot of the options page.
 
 - [x] Reading speed (#4). `POST /tts/generate` takes `speed` (0.5–2.0, 422 outside), passed to Kokoro's
   `generate`. Popup slider saves on input; options has it in a new Reading card. The background reads the

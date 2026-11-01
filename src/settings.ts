@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 /**
  * Saved settings, shared by the background worker, popup and options page.
+ *
+ * The content script is a classic script and can't import this module, so it keeps
+ * its own copy of the display defaults (see `content.ts`); keep the two in step.
  */
+
+export type HighlightStyle = 'background' | 'underline' | 'both';
 
 export interface Settings {
   serverUrl: string;
@@ -9,6 +14,11 @@ export interface Settings {
   selectedModel: string;
   /** Speaking rate sent with every chunk: 1 is normal. */
   speed: number;
+  /** Colour of the sentence/chunk being read. */
+  highlightColor: string;
+  highlightStyle: HighlightStyle;
+  /** Light text on a dark highlight, for readers who need stronger contrast. */
+  highContrast: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -16,11 +26,23 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultVoice: 'af_heart',
   selectedModel: 'mlx-community/Kokoro-82M-bf16',
   speed: 1,
+  highlightColor: '#dcd7fc',
+  highlightStyle: 'background',
+  highContrast: false,
 };
 
 /** Slowest and fastest speed the popup and options offer (the server accepts 0.5–2). */
 export const MIN_SPEED = 0.5;
 export const MAX_SPEED = 2;
+
+/** Preset highlight colours offered in the options page. */
+export const HIGHLIGHT_PRESETS: { name: string; color: string }[] = [
+  { name: 'Purple', color: '#dcd7fc' },
+  { name: 'Yellow', color: '#fff3a3' },
+  { name: 'Green', color: '#c8f2c2' },
+  { name: 'Blue', color: '#cfe5ff' },
+  { name: 'Pink', color: '#ffd3e8' },
+];
 
 const api: typeof chrome = typeof browser !== 'undefined' ? browser : chrome;
 
