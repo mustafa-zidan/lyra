@@ -9,7 +9,6 @@
 
 Accessibility issues (#3–#11), in dependency order:
 
-- [ ] #7 "Read from here" context-menu item and Alt+click a paragraph
 - [ ] #3 Word highlight: server returns word timings (`X-Word-Timings`, Kokoro token timestamps for
   English, estimated from segment duration elsewhere); second highlight `lyra-word`
 - [ ] #9 Focus mode: ruler / spotlight following the highlight, toggled from the status bar
@@ -19,6 +18,15 @@ Accessibility issues (#3–#11), in dependency order:
 ## Backlog
 
 ## Done
+
+- [x] Read from here (#7). Context-menu item "Read aloud from here" (`page` context) and Alt+click on a
+  paragraph (setting `clickToRead`, default on; links, buttons and form fields are skipped). The content
+  script finds the clicked block (`p`, `li`, headings, …), its text and the visible text from it to the end
+  of its `article`/`main`/body; the background looks for the block's first 12 words in the Readability
+  article (whitespace-insensitive) and reads from there, else uses the page text. Verified: 4 new
+  Playwright tests; the native context menu can't be clicked from Playwright, so the menu item itself is
+  untested (the content-script side is). Limitation: a block whose text appears earlier on the page reads
+  from the first copy.
 
 - [x] Keyboard shortcuts (#6). Manifest `commands`: read-selection (Alt+Shift+S), read-page (Alt+Shift+P),
   toggle-pause (Alt+Shift+Space), stop (Alt+Shift+X), plus back/forward without default keys (four

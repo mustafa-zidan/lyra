@@ -19,6 +19,8 @@ export interface Settings {
   highlightStyle: HighlightStyle;
   /** Light text on a dark highlight, for readers who need stronger contrast. */
   highContrast: boolean;
+  /** Alt+click (Option+click) a paragraph to read from there to the end. */
+  clickToRead: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -29,6 +31,7 @@ export const DEFAULT_SETTINGS: Settings = {
   highlightColor: '#dcd7fc',
   highlightStyle: 'background',
   highContrast: false,
+  clickToRead: true,
 };
 
 /** Slowest and fastest speed the popup and options offer (the server accepts 0.5–2). */

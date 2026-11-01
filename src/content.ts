@@ -86,12 +86,15 @@
     highlightColor: string;
     highlightStyle: 'background' | 'underline' | 'both';
     highContrast: boolean;
+    /** Alt+click a paragraph to read from there to the end. */
+    clickToRead: boolean;
   }
 
   const display: DisplaySettings = {
     highlightColor: '#dcd7fc',
     highlightStyle: 'background',
     highContrast: false,
+    clickToRead: true,
   };
 
   /** Only #rrggbb from storage goes into the stylesheet. */
@@ -1049,6 +1052,71 @@
   });
 
   // ---------------------------------------------------------------------------
+  // Read from here (context menu, or Alt+click a paragraph)
+  // ---------------------------------------------------------------------------
+
+  /** Elements that make up one block of reading text. */
+  const BLOCK_SELECTOR =
+    'p, li, h1, h2, h3, h4, h5, h6, blockquote, dd, dt, td, th, pre, figcaption, summary';
+
+  /** Where the context menu was last opened, for "Read from here". */
+  let contextTarget: Element | null = null;
+  document.addEventListener(
+    'contextmenu',
+    (e) => {
+      contextTarget = e.target instanceof Element ? e.target : null;
+    },
+    true,
+  );
+
+  /** What "Read from here" needs to know about a clicked point of the page. */
+  interface TextFromHere {
+    /** The clicked block's own text, for finding it in the extracted article. */
+    anchor: string;
+    /** The page's visible text from the clicked block to the end of its article. */
+    text: string;
+    language?: string;
+  }
+
+  /**
+   * The visible text from `target`'s block to the end of the article (the nearest
+   * `article`/`main`, else the body). If the block's text appears more than once, the
+   * first copy is taken.
+   */
+  function textFromHere(target: Element | null): TextFromHere | null {
+    if (!target || target.closest('[id^="__lyra"]')) return null;
+    const block = (target.closest(BLOCK_SELECTOR) ?? target) as HTMLElement;
+    const container = (block.closest('article, main, [role="main"]') ??
+      document.body) as HTMLElement;
+    const anchor = (block.innerText ?? block.textContent ?? '').trim();
+    if (!anchor) return null;
+    const all = container.innerText;
+    const at = all.indexOf(anchor);
+    const text = (at === -1 ? anchor : all.slice(at)).trim();
+    const lang = block.closest('[lang]')?.getAttribute('lang') || document.documentElement.lang;
+    return { anchor, text, language: lang?.trim() || undefined };
+  }
+
+  // Alt+click (Option+click on macOS) on text starts reading from that paragraph. Links,
+  // buttons and form fields keep their own Alt+click (e.g. download a link).
+  document.addEventListener(
+    'click',
+    (e) => {
+      if (!display.clickToRead || !e.altKey || e.shiftKey || e.ctrlKey || e.metaKey) return;
+      const target = e.target instanceof Element ? e.target : null;
+      if (!target || target.closest('a, button, input, select, textarea, label, [contenteditable]'))
+        return;
+      const here = textFromHere(target);
+      if (!here) return;
+      e.preventDefault();
+      e.stopPropagation();
+      window.getSelection()?.removeAllRanges();
+      api.runtime.sendMessage({ action: 'read-from-here', ...here }).catch(() => {});
+    },
+    true,
+  );
+
+  // ---------------------------------------------------------------------------
   // Message listener
   // ---------------------------------------------------------------------------
 
@@ -1103,6 +1171,9 @@
 
       case 'get-state':
         return Promise.resolve({ reading: reader !== null, paused: reader?.paused ?? false });
+
+      case 'get-text-from-here':
+        return Promise.resolve(textFromHere(contextTarget));
 
       case 'get-selection':
         return Promise.resolve({
