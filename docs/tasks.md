@@ -141,6 +141,18 @@
   pre-commit hooks. Follow-ups: drop the preshed constraint once a fixed release ships; move to TypeScript 7 when
   typescript-eslint supports it; `packageManager` is still pnpm@10.0.0.
 
+- [x] Keep reading long pages to the end. Two causes stopped it partway: (1) the read loop ran in the MV3 service
+  worker and awaited each chunk's playback, and Chrome shuts a worker down after ~30 s without events, so a long read
+  died mid-page; (2) `chunkText` only split at sentence marks, so a list or table with no full stops became one chunk
+  over the server's 5000-character limit (422) and the read ended with an error. The loop now runs in the content
+  script: the background splits the text and sends the chunks; the page requests audio per chunk (`generate`
+  message, a fresh event each time, so the worker stays alive), keeps two chunks ahead decoding while one plays, and
+  plays them back to back on one AudioContext. The first chunk is capped at 180 characters so audio starts quickly,
+  later ones at 450. `chunkText` also breaks at line breaks and cuts over-long sentences at a comma or space; a
+  single failing chunk is skipped (two in a row end the read). Stop is broadcast to every tab, since the worker may have restarted
+  since the read began. Verified: typecheck/ESLint/Prettier clean, all Playwright tests incl. a new ~40k-character
+  read-to-the-end test.
+
 ## Notes
 
 - Reflection/verification: implemented cross-tab playback ownership, pending content-script audio resolution on stop,
