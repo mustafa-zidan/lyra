@@ -30,7 +30,7 @@ export default defineConfig({
     {
       // Browser integration tests — load Chromium with the extension
       name: 'chromium-extension',
-      testMatch: ['**/content.test.js', '**/popup.test.js'],
+      testMatch: ['**/content.test.js', '**/highlight.test.js', '**/popup.test.js'],
       use: {
         // Actual context launch is handled by the extension-context fixture
         browserName: 'chromium',

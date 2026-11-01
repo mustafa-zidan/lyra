@@ -29,7 +29,7 @@ mlx-audio  (Kokoro-82M, German Kokoro fine-tunes)
 | A supported platform             | See [platform extras](#platform-extras) below |
 | Python 3.12+                     |                                               |
 | [uv](https://docs.astral.sh/uv/) | Python package & project manager              |
-| Chrome 88+ or Firefox 109+       | For the browser extension                     |
+| Chrome 88+ or Firefox 112+       | For the browser extension                     |
 
 ### Platform extras
 
@@ -62,7 +62,7 @@ Without a platform extra the server still starts, but `/health` reports `degrade
 
 Models are downloaded from Hugging Face on first use. The German Kokoro fine-tunes
 ([kikiri-tts](https://huggingface.co/kikiri-tts), Apache-2.0) are published only as PyTorch
-checkpoints, so the server converts them to MLX once, into `EURYDICE_CACHE_DIR`
+checkpoints, so the server converts them to MLX once, into `LYRA_CACHE_DIR`
 (default `~/.cache/lyra`).
 
 Kokoro reads English through misaki's English G2P, Japanese and Chinese through
@@ -120,6 +120,14 @@ Interactive docs: `http://127.0.0.1:8000/docs`
 
 ### 3. Load the browser extension
 
+The extension's JavaScript is compiled from `src/` and isn't committed, so build it first
+(and again after pulling changes):
+
+```bash
+pnpm install
+pnpm run build:ts
+```
+
 **Chrome:**
 
 1. Open `chrome://extensions`
@@ -137,24 +145,26 @@ Interactive docs: `http://127.0.0.1:8000/docs`
 
 ## Configuration
 
-Environment variables (prefix: `EURYDICE_`):
+Environment variables (prefix: `LYRA_`; the old `EURYDICE_` prefix still works but logs a warning):
 
 ```bash
 # Server bind address
-EURYDICE_HOST=127.0.0.1
-EURYDICE_PORT=8000
+LYRA_HOST=127.0.0.1
+LYRA_PORT=8000
 
 # Default model (see GET /models or the table above), loaded at startup
-EURYDICE_MLX_MODEL=mlx-community/Kokoro-82M-bf16
+LYRA_MLX_MODEL=mlx-community/Kokoro-82M-bf16
 
 # Default voice (see GET /voices), e.g. af_heart, am_adam, bf_emma, bm_george
-EURYDICE_MLX_DEFAULT_VOICE=af_heart
+LYRA_MLX_DEFAULT_VOICE=af_heart
 
 # Where runtime-converted models (German Kokoro) are stored
-EURYDICE_CACHE_DIR=~/.cache/lyra
+LYRA_CACHE_DIR=~/.cache/lyra
 
-# CORS origins (comma-separated, or * for all)
-EURYDICE_CORS_ORIGINS=*
+# CORS: browser extensions (chrome-extension://, moz-extension://, safari-web-extension://)
+# are always allowed; web pages are not, so sites you visit can't use the server.
+# Add extra origins only if a web page needs it (comma-separated, or * for every site).
+LYRA_CORS_ORIGINS=
 ```
 
 The same variables can be put in a `.env` file in the project root.

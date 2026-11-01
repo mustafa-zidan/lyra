@@ -33,10 +33,14 @@
   let fullText = '';
   /** `fullText` with whitespace runs collapsed to one space, for matching chunks. */
   let normText = '';
-  /** Maps each `normText` index to its `fullText` index. */
+  /** normText index → fullText index (see buildNormalisationMap). */
   let normToOrig: number[] = [];
-  /** Where the last highlighted chunk ended in `normText`; the next is searched from here. */
-  let searchFrom = 0;
+  /**
+   * Where the last highlighted chunk ended in normText. Chunks arrive in reading order,
+   * so the next one is searched for from here: a sentence that also appears earlier on the
+   * page (a repeated heading, a nav label) must not pull the highlight back to that copy.
+   */
+  let matchCursor = 0;
   /** Whether the CSS Custom Highlight API is available. */
   const hasCSSHighlight =
     typeof CSS !== 'undefined' &&
@@ -68,7 +72,6 @@
   function buildTextIndex(root: Element = document.body): void {
     textIndex = [];
     fullText = '';
-    searchFrom = 0;
 
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
@@ -95,10 +98,9 @@
       fullText += text;
       offset += text.length;
     }
-    // Normalise once per read rather than once per chunk: on a long page that work
-    // per chunk adds up.
     normText = fullText.replace(/\s+/g, ' ');
     normToOrig = buildNormalisationMap(fullText);
+    matchCursor = 0;
   }
 
   /**
@@ -135,14 +137,13 @@
     clearHighlight();
     if (!chunkText || textIndex.length === 0) return;
 
-    // Normalise whitespace for matching
+    // Normalise whitespace for matching. Search forward from the previous chunk first;
+    // only if that fails (e.g. the page changed) fall back to the first match on the page.
     const needle = chunkText.trim().replace(/\s+/g, ' ');
-    // Chunks are read in page order, so look after the previous one first: that
-    // finds the right copy of text repeated on the page.
-    let idx = normText.indexOf(needle, searchFrom);
+    let idx = normText.indexOf(needle, matchCursor);
     if (idx === -1) idx = normText.indexOf(needle);
     if (idx === -1) return;
-    searchFrom = idx + needle.length;
+    matchCursor = idx + needle.length;
 
     // Map normalised offsets back to original fullText positions.
     const start = normToOrig[idx];
@@ -686,6 +687,20 @@
     switch ((message as { action: string }).action) {
       case 'start-reading':
         startReading(message as ReadRequest).catch(console.error);
+        break;
+
+      // Highlighting without playback: reset the page index, then highlight a chunk
+      // (or clear with null). Reads use start-reading; the highlight tests drive these.
+      case 'playback-started':
+        buildTextIndex();
+        break;
+
+      case 'chunk-highlight':
+        if ((message as { text?: string }).text) {
+          highlightChunk((message as { text: string }).text);
+        } else {
+          clearHighlight();
+        }
         break;
 
       case 'playback-stopped':

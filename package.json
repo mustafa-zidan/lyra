@@ -13,7 +13,7 @@
     "format:js:check": "prettier --check \"src/**/*.{ts,json,css,html}\"",
     "build:ts": "tsc",
     "typecheck": "tsc --noEmit",
-    "build:ext": "web-ext build --source-dir extension/ --artifacts-dir dist/ --overwrite-dest",
+    "build:ext": "tsc && web-ext build --source-dir extension/ --artifacts-dir dist/ --overwrite-dest",
     "test:ext": "tsc && playwright test",
     "generate-icons": "node scripts/generate-icons.js",
     "vendor:readability": "cp node_modules/@mozilla/readability/Readability.js extension/vendor/Readability.js"

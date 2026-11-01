@@ -11,8 +11,8 @@
  * `firstMaxLen` caps the first chunk separately, so reading starts after generating a
  * short passage instead of a full-size one.
  *
- * Exported as an ES module so it can be imported in Node.js unit tests while
- * background.ts remains a plain script for cross-browser compatibility.
+ * The background service worker (an ES module) imports this, and so do the Node.js
+ * unit tests, so the tests cover the code that actually runs.
  */
 export function chunkText(text: string, maxLen = 500, firstMaxLen = maxLen): string[] {
   const pieces = (text.match(/[^.!?。！？｡।\n]*(?:[.!?。！？｡।]+|\n+|$)/g) ?? [text]).filter(
