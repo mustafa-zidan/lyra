@@ -9,6 +9,7 @@ import logging
 import math
 import os
 import re
+import warnings
 import wave
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,6 +20,16 @@ import numpy as np
 from server.core.config import Settings
 
 logger = logging.getLogger(__name__)
+
+# misaki's English G2P loads spaCy, whose registry imports the spacy-curated-transformers
+# plugin, and curated_transformers applies ``@torch.jit.script`` at import time. We never use
+# transformer pipelines and curated-transformers is unmaintained, so silence just that warning.
+warnings.filterwarnings(
+    "ignore",
+    message=r"`torch\.jit\.script` is deprecated",
+    category=FutureWarning,
+    module=r"torch\.jit\._script",
+)
 
 try:
     from mlx_audio.tts.utils import load_model as _mlx_load_model

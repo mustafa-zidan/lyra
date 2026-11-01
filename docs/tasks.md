@@ -153,6 +153,11 @@
   since the read began. Verified: typecheck/ESLint/Prettier clean, all Playwright tests incl. a new ~40k-character
   read-to-the-end test.
 
+- [x] Silence the `torch.jit.script is deprecated` FutureWarning on the first English pipeline. Source: misaki → spaCy
+  registry → spacy-curated-transformers → `curated_transformers/models/output.py` decorates with `@torch.jit.script`
+  at import. Not fixable here (unmaintained upstream, transformers unused), so `mlx_tts_service.py` filters that exact
+  message from `torch.jit._script`. Verified: misaki English G2P runs without the warning, 43 pytest, ruff clean.
+
 ## Notes
 
 - Reflection/verification: implemented cross-tab playback ownership, pending content-script audio resolution on stop,
