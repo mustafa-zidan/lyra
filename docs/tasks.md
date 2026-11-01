@@ -9,8 +9,6 @@
 
 Accessibility issues (#3–#11), in dependency order:
 
-- [ ] #3 Word highlight: server returns word timings (`X-Word-Timings`, Kokoro token timestamps for
-  English, estimated from segment duration elsewhere); second highlight `lyra-word`
 - [ ] #9 Focus mode: ruler / spotlight following the highlight, toggled from the status bar
 - [ ] #11 Alt+click a word to hear it again, slower
 - [ ] #10 Reader view overlay with dyslexia-friendly fonts and spacing
@@ -18,6 +16,19 @@ Accessibility issues (#3–#11), in dependency order:
 ## Backlog
 
 ## Done
+
+- [x] Word-by-word highlight (#3). Server: `_run_kokoro` runs the Kokoro pipeline directly (model.generate
+  drops the tokens) and `_word_timings` turns each segment into `[start, end, t0, t1]` per word: misaki
+  token timestamps for English, the segment's duration shared by word length elsewhere; tokens split
+  from one written word ("serpent" + "'s", "well-known") are merged; offsets are UTF-16 for the browser.
+  Sent as `X-Word-Timings` (exposed via CORS). Extension: the content script aligns the chunk's words
+  with the page words inside the chunk's matched span, then an rAF loop on `AudioContext.currentTime`
+  (minus output latency, so it stops while paused) sets a second highlight `lyra-word` (priority 1) and
+  narrows `lyra-reading` to the current sentence. Settings: "Follow along word by word" (default on)
+  and a word colour. Starting a read now clears the page selection, which painted over the
+  highlights. Verified: 7 new pytest, 3 new Playwright tests (mock sends evenly spread timings), real
+  server timings for English/Japanese/French/German and a real read in Chromium with the word moving
+  (screenshot). Follow-up: back/forward still move by chunk, not sentence.
 
 - [x] Read from here (#7). Context-menu item "Read aloud from here" (`page` context) and Alt+click on a
   paragraph (setting `clickToRead`, default on; links, buttons and form fields are skipped). The content

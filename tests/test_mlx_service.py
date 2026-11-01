@@ -4,6 +4,7 @@
 import io
 import wave
 from collections.abc import Iterator
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -16,6 +17,8 @@ from server.core.mlx_tts_service import (
     MLXTTSService,
     _array_to_wav,
     _language_from_tag,
+    _Segment,
+    _word_timings,
 )
 
 KOKORO = "mlx-community/Kokoro-82M-bf16"
@@ -72,7 +75,7 @@ def captured_generate(service: MLXTTSService, monkeypatch: pytest.MonkeyPatch) -
 
     def fake_generate_sync(text, voice, model_id, language, speed=1.0):
         calls.append((model_id, voice, language))
-        return b"", 0.0
+        return b"", 0.0, []
 
     monkeypatch.setattr(service, "_generate_sync", fake_generate_sync)
     return calls
@@ -147,3 +150,88 @@ def test_kokoro_interpolate_round_trip_keeps_length() -> None:
     down = istftnet.interpolate(x, scale_factor=1 / 300, mode="linear")
     assert down.shape[-1] == 114
     assert istftnet.interpolate(down, scale_factor=300, mode="linear").shape[-1] == 34200
+
+
+def _token(text: str, start: float | None, end: float | None) -> SimpleNamespace:
+    return SimpleNamespace(text=text, start_ts=start, end_ts=end)
+
+
+def test_word_timings_from_english_tokens() -> None:
+    text = "Dr. Smith paid $5."
+    tokens = [
+        _token("Dr.", 0.2, 0.6),
+        _token("Smith", 0.6, 0.9),
+        _token("paid", 0.9, 1.1),
+        _token("$", None, None),  # no phonemes, no timestamp
+        _token("5", 1.1, 1.8),
+        _token(".", 1.8, 1.9),  # punctuation isn't a word
+    ]
+    segments = [_Segment(text, tokens, offset=0.0, duration=2.0)]
+    assert _word_timings(text, segments) == [
+        (0, 2, 0.2, 0.6),
+        (4, 9, 0.6, 0.9),
+        (10, 14, 0.9, 1.1),
+        (16, 17, 1.1, 1.8),
+    ]
+
+
+def test_word_timings_offsets_later_segments() -> None:
+    text = "One.\nTwo."
+    segments = [
+        _Segment("One.", [_token("One", 0.1, 0.5)], offset=0.0, duration=0.7),
+        _Segment("Two.", [_token("Two", 0.1, 0.5)], offset=0.7, duration=0.7),
+    ]
+    assert _word_timings(text, segments) == [(0, 3, 0.1, 0.5), (5, 8, 0.8, 1.2)]
+
+
+def test_word_timings_estimated_without_tokens() -> None:
+    # Non-English segments have no timestamps: the duration is shared by word length.
+    text = "Bonjour, je vais bien."
+    words = _word_timings(text, [_Segment(text, None, offset=1.0, duration=2.0)])
+    assert [text[a:b] for a, b, _, _ in words] == ["Bonjour", "je", "vais", "bien"]
+    assert words[0][2] == 1.0
+    assert words[-1][3] == 3.0
+    starts = [w[2] for w in words]
+    assert starts == sorted(starts)
+    # Longer words get longer.
+    assert words[0][3] - words[0][2] > words[1][3] - words[1][2]
+
+
+def test_word_timings_split_chinese_and_japanese_by_character() -> None:
+    text = "今日は。"
+    words = _word_timings(text, [_Segment(text, None, offset=0.0, duration=0.9)])
+    assert [text[a:b] for a, b, _, _ in words] == ["今", "日", "は"]
+
+
+def test_word_timings_skip_words_rewritten_by_the_g2p() -> None:
+    text = "He left."
+    tokens = [_token("Mister", 0.0, 0.2), _token("He", 0.2, 0.4), _token("left", 0.4, 0.8)]
+    words = _word_timings(text, [_Segment(text, tokens, offset=0.0, duration=1.0)])
+    assert [text[a:b] for a, b, _, _ in words] == ["He", "left"]
+
+
+def test_word_timings_use_utf16_offsets() -> None:
+    # The browser indexes strings in UTF-16: an emoji is two code units.
+    text = "😀 hello"
+    words = _word_timings(text, [_Segment(text, [_token("hello", 0.0, 0.5)], 0.0, 0.5)])
+    assert words == [(3, 8, 0.0, 0.5)]
+
+
+def test_word_timings_join_pieces_of_one_written_word() -> None:
+    text = "the serpent's well-known bite"
+    tokens = [
+        _token("the", 0.0, 0.1),
+        _token("serpent", 0.1, 0.5),
+        _token("'s", 0.5, 0.6),
+        _token("well", 0.6, 0.8),
+        _token("-", None, None),
+        _token("known", 0.8, 1.0),
+        _token("bite", 1.0, 1.3),
+    ]
+    words = _word_timings(text, [_Segment(text, tokens, offset=0.0, duration=1.3)])
+    assert [(text[a:b], t0, t1) for a, b, t0, t1 in words] == [
+        ("the", 0.0, 0.1),
+        ("serpent's", 0.1, 0.6),
+        ("well-known", 0.6, 1.0),
+        ("bite", 1.0, 1.3),
+    ]

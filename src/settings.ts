@@ -21,6 +21,10 @@ export interface Settings {
   highContrast: boolean;
   /** Alt+click (Option+click) a paragraph to read from there to the end. */
   clickToRead: boolean;
+  /** Highlight the word being spoken, and narrow the passage highlight to its sentence. */
+  wordHighlight: boolean;
+  /** Colour of the word being spoken. */
+  wordColor: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -32,6 +36,8 @@ export const DEFAULT_SETTINGS: Settings = {
   highlightStyle: 'background',
   highContrast: false,
   clickToRead: true,
+  wordHighlight: true,
+  wordColor: '#ffd84d',
 };
 
 /** Slowest and fastest speed the popup and options offer (the server accepts 0.5–2). */

@@ -88,3 +88,15 @@ def test_generate_default_speed_is_normal(client: TestClient, mock_tts_service: 
 def test_generate_rejects_out_of_range_speed(client: TestClient) -> None:
     assert client.post("/tts/generate", json={"text": "Hi", "speed": 0.2}).status_code == 422
     assert client.post("/tts/generate", json={"text": "Hi", "speed": 3}).status_code == 422
+
+
+def test_generate_returns_word_timings(client: TestClient, mock_tts_service: MagicMock) -> None:
+    audio = AudioResult(
+        audio_data=b"RIFF\x00\x00\x00\x00WAVEdata\x00\x00\x00\x00",
+        duration=0.5,
+        voice="af_heart",
+        words=[(0, 5, 0.1, 0.4)],
+    )
+    mock_tts_service.generate = AsyncMock(return_value=audio)
+    response = client.post("/tts/generate", json={"text": "Hello"})
+    assert response.headers["X-Word-Timings"] == "[[0,5,0.1,0.4]]"

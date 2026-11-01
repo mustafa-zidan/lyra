@@ -102,6 +102,8 @@ interface TTSResult {
   model: string | null;
   /** Language label from `X-Language`, e.g. "German". */
   language: string | null;
+  /** From `X-Word-Timings`: [start, end, startSeconds, endSeconds] per spoken word. */
+  words: number[][];
 }
 
 interface HealthStatus {
@@ -450,7 +452,7 @@ async function generateChunk(tabId: number, message: ExtMessage): Promise<Record
       controller.signal,
     );
     const label = await describeResult(result, model, serverUrl);
-    return { ok: true, audio: result.audio, label };
+    return { ok: true, audio: result.audio, label, words: result.words };
   } catch (err) {
     // A deliberate stop aborts the fetch — report it as cancelled, not as an error.
     if (controller.signal.aborted) return { ok: false, cancelled: true };
@@ -557,7 +559,23 @@ async function fetchTTS(
     audio: btoa(binary), // raw base64, no data: prefix
     model: response.headers.get('X-Model'),
     language: response.headers.get('X-Language'),
+    words: parseWordTimings(response.headers.get('X-Word-Timings')),
   };
+}
+
+/** `X-Word-Timings` as a list of [start, end, startSeconds, endSeconds]; [] if absent or bad. */
+function parseWordTimings(header: string | null): number[][] {
+  if (!header) return [];
+  try {
+    const words = JSON.parse(header) as unknown;
+    if (!Array.isArray(words)) return [];
+    return words.filter(
+      (w): w is number[] =>
+        Array.isArray(w) && w.length === 4 && w.every((n) => typeof n === 'number'),
+    );
+  } catch {
+    return [];
+  }
 }
 
 /**
