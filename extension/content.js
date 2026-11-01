@@ -4,7 +4,9 @@
  *
  * Injected into every page. Responsible for:
  *  - Showing a floating playback-status bar at the bottom of the page
- *  - Highlighting the sentence currently being spoken
+ *  - Running the read: asking the background for each chunk's audio (a few
+ *    chunks ahead of the one playing), playing them back to back and
+ *    highlighting the chunk being spoken
  *  - Listening for messages from the background worker
  *  - Providing selected text back to the popup on request
  */
@@ -17,6 +19,12 @@
     let textIndex = [];
     /** Concatenated plain text of the whole body, matching textIndex offsets. */
     let fullText = '';
+    /** `fullText` with whitespace runs collapsed to one space, for matching chunks. */
+    let normText = '';
+    /** Maps each `normText` index to its `fullText` index. */
+    let normToOrig = [];
+    /** Where the last highlighted chunk ended in `normText`; the next is searched from here. */
+    let searchFrom = 0;
     /** Whether the CSS Custom Highlight API is available. */
     const hasCSSHighlight = typeof CSS !== 'undefined' &&
         typeof CSS.highlights !== 'undefined' &&
@@ -46,6 +54,7 @@
     function buildTextIndex(root = document.body) {
         textIndex = [];
         fullText = '';
+        searchFrom = 0;
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
             acceptNode(node) {
                 const parent = node.parentElement;
@@ -70,6 +79,10 @@
             fullText += text;
             offset += text.length;
         }
+        // Normalise once per read rather than once per chunk: on a long page that work
+        // per chunk adds up.
+        normText = fullText.replace(/\s+/g, ' ');
+        normToOrig = buildNormalisationMap(fullText);
     }
     /**
      * Build a mapping from normalised-string index → original-string index.
@@ -107,13 +120,15 @@
             return;
         // Normalise whitespace for matching
         const needle = chunkText.trim().replace(/\s+/g, ' ');
-        const haystack = fullText.replace(/\s+/g, ' ');
-        const idx = haystack.indexOf(needle);
+        // Chunks are read in page order, so look after the previous one first: that
+        // finds the right copy of text repeated on the page.
+        let idx = normText.indexOf(needle, searchFrom);
+        if (idx === -1)
+            idx = normText.indexOf(needle);
         if (idx === -1)
             return;
+        searchFrom = idx + needle.length;
         // Map normalised offsets back to original fullText positions.
-        // Walk fullText, tracking where each normalised character maps to.
-        const normToOrig = buildNormalisationMap(fullText);
         const start = normToOrig[idx];
         const end = idx + needle.length < normToOrig.length ? normToOrig[idx + needle.length] : fullText.length;
         const range = buildRange(start, end);
@@ -254,6 +269,7 @@
             flex: 'none',
         });
         stopBtn.addEventListener('click', () => {
+            stopReading();
             hideStatusBar();
             clearHighlight();
             chrome.runtime.sendMessage({ action: 'stop' });
@@ -281,79 +297,176 @@
     // ---------------------------------------------------------------------------
     const api = typeof browser !== 'undefined' ? browser : chrome;
     injectHighlightStyle();
-    let currentAudio = null;
     /**
-     * Decode a raw base64 WAV string and play it, resolving when playback ends
-     * (or is stopped). decodeAudioData on an ArrayBuffer is not subject to the
-     * page's media-src CSP, unlike a `new Audio(dataUrl)`.
+     * How many chunks past the playing one to request. The server generates one at a
+     * time, so two is enough to keep the next chunk ready without queueing much work
+     * that a Stop would waste.
      */
-    async function playAudio(base64Wav) {
-        stopAudio(); // halt anything still playing
-        const binary = atob(base64Wav);
+    const LOOKAHEAD = 2;
+    /** Waiting longer than this for a chunk probably means the server is loading a model. */
+    const SLOW_REQUEST_MS = 8000;
+    /** Give up after this many chunks in a row fail; a single bad chunk is skipped. */
+    const MAX_CONSECUTIVE_FAILURES = 2;
+    let reader = null;
+    /**
+     * Read a list of chunks aloud, in order, until the end or until stopped.
+     *
+     * Audio for the next chunks is requested and decoded while the current one plays,
+     * so reading starts as soon as the first (short) chunk is ready and continues
+     * without a pause per chunk, however long the page is.
+     *
+     * Playback uses decodeAudioData on an ArrayBuffer, which is not subject to the
+     * page's media-src CSP, unlike `new Audio(dataUrl)`. One AudioContext serves the
+     * whole read.
+     */
+    async function startReading(req) {
+        stopReading();
+        const r = {
+            cancelled: false,
+            ctx: new AudioContext(),
+            source: null,
+            finishPlayback: null,
+        };
+        reader = r;
+        // Not awaited: resume() can stay pending until the page allows audio, and the
+        // first chunk's request should go out meanwhile.
+        if (r.ctx.state === 'suspended')
+            r.ctx.resume().catch(() => { });
+        buildTextIndex();
+        showStatusBar('Preparing…');
+        const { chunks } = req;
+        const pending = new Map();
+        const prepare = (i) => {
+            if (i < chunks.length && !pending.has(i))
+                pending.set(i, prepareChunk(r, req, chunks[i]));
+        };
+        let statusLabel = '';
+        let failures = 0;
+        let played = 0;
+        let lastError = '';
+        try {
+            for (let i = 0; i < chunks.length; i++) {
+                for (let j = i; j <= i + LOOKAHEAD; j++)
+                    prepare(j);
+                const slowTimer = setTimeout(() => {
+                    if (r.cancelled)
+                        return;
+                    showStatusBar('Loading model… the first use downloads it, which can take a while');
+                    statusLabel = '';
+                }, SLOW_REQUEST_MS);
+                const chunk = await pending.get(i);
+                clearTimeout(slowTimer);
+                pending.delete(i); // drop the decoded audio once played
+                if (r.cancelled || chunk.cancelled)
+                    return;
+                if (!chunk.buffer) {
+                    lastError = chunk.error ?? 'No audio';
+                    if (++failures >= MAX_CONSECUTIVE_FAILURES)
+                        throw new Error(lastError);
+                    continue; // skip a passage the server couldn't read and carry on
+                }
+                failures = 0;
+                if (chunk.label && chunk.label !== statusLabel) {
+                    statusLabel = chunk.label;
+                    showStatusBar(statusLabel);
+                }
+                highlightChunk(chunks[i]);
+                await playBuffer(r, chunk.buffer);
+                played++;
+                if (r.cancelled)
+                    return;
+            }
+            if (played === 0 && lastError)
+                throw new Error(lastError);
+            clearHighlight();
+            showStatusBar('Done.');
+            setTimeout(hideStatusBar, 1500);
+        }
+        catch (err) {
+            if (r.cancelled)
+                return;
+            clearHighlight();
+            showStatusBar(`Error: ${err.message}`);
+            setTimeout(hideStatusBar, 4000);
+        }
+        finally {
+            if (reader === r)
+                stopReading();
+        }
+    }
+    /** Ask the background for a chunk's audio and decode it. */
+    async function prepareChunk(r, req, text) {
+        let res;
+        try {
+            res = (await api.runtime.sendMessage({
+                action: 'generate',
+                readId: req.readId,
+                text,
+                voice: req.voice,
+                serverUrl: req.serverUrl,
+                model: req.model,
+                language: req.language,
+            }));
+        }
+        catch (err) {
+            return { buffer: null, error: err.message };
+        }
+        if (r.cancelled || res?.cancelled)
+            return { buffer: null, cancelled: true };
+        if (!res?.ok || !res.audio)
+            return { buffer: null, error: res?.error ?? 'No audio' };
+        try {
+            const buffer = await r.ctx.decodeAudioData(base64ToArrayBuffer(res.audio));
+            return { buffer, label: res.label };
+        }
+        catch {
+            return { buffer: null, cancelled: r.cancelled, error: 'Could not decode the audio' };
+        }
+    }
+    /** Play a decoded chunk, resolving when it ends or the read is stopped. */
+    function playBuffer(r, buffer) {
+        return new Promise((resolve) => {
+            if (r.cancelled)
+                return resolve();
+            const source = r.ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(r.ctx.destination);
+            const finish = () => {
+                if (r.finishPlayback === finish)
+                    r.finishPlayback = null;
+                if (r.source === source)
+                    r.source = null;
+                resolve();
+            };
+            r.source = source;
+            r.finishPlayback = finish;
+            source.onended = finish;
+            source.start();
+        });
+    }
+    function base64ToArrayBuffer(base64) {
+        const binary = atob(base64);
         const buf = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++)
             buf[i] = binary.charCodeAt(i);
-        const ctx = new AudioContext();
-        const state = { ctx, source: null, stopped: false, finish: null };
-        currentAudio = state;
-        if (ctx.state === 'suspended')
-            await ctx.resume();
-        let decoded;
-        try {
-            decoded = await ctx.decodeAudioData(buf.buffer);
-        }
-        catch {
-            if (ctx.state !== 'closed')
-                ctx.close();
-            if (currentAudio === state)
-                currentAudio = null;
-            return;
-        }
-        // Stop may have been requested while we were resuming/decoding.
-        if (state.stopped) {
-            if (ctx.state !== 'closed')
-                ctx.close();
-            return;
-        }
-        const source = ctx.createBufferSource();
-        state.source = source;
-        source.buffer = decoded;
-        source.connect(ctx.destination);
-        await new Promise((resolve) => {
-            const finish = () => {
-                state.finish = null;
-                if (ctx.state !== 'closed')
-                    ctx.close();
-                if (currentAudio === state)
-                    currentAudio = null;
-                resolve();
-            };
-            state.finish = finish;
-            source.onended = finish;
-            source.start(0);
-        });
+        return buf.buffer;
     }
-    /** Immediately stop any audio started by playAudio. */
-    function stopAudio() {
-        const state = currentAudio;
-        if (!state)
+    /** Stop the current read, if any, and release its audio. */
+    function stopReading() {
+        const r = reader;
+        if (!r)
             return;
-        state.stopped = true;
+        reader = null;
+        r.cancelled = true;
         try {
-            state.source?.stop();
+            r.source?.stop();
         }
         catch {
             // source may not have started yet — ignore
         }
-        state.finish?.();
-        try {
-            if (state.ctx.state !== 'closed')
-                state.ctx.close();
-        }
-        catch {
-            // context already closed — ignore
-        }
-        currentAudio = null;
+        r.finishPlayback?.();
+        if (r.ctx.state !== 'closed')
+            r.ctx.close().catch(() => { });
     }
     // ---------------------------------------------------------------------------
     // Floating "Listen" button shown next to a text selection (DeepL-style)
@@ -495,49 +608,18 @@
     // ---------------------------------------------------------------------------
     // Message listener
     // ---------------------------------------------------------------------------
-    api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    api.runtime.onMessage.addListener((message) => {
         switch (message.action) {
-            case 'playback-started':
-                buildTextIndex();
-                showStatusBar('Reading aloud…');
-                break;
-            case 'playback-status':
-                // Only update a bar that's showing: a status arriving after Stop is stale.
-                if (statusBar?.style.opacity === '1') {
-                    showStatusBar(message.text);
-                }
-                break;
-            case 'chunk-highlight':
-                if (message.text) {
-                    highlightChunk(message.text);
-                }
-                else {
-                    clearHighlight();
-                }
-                break;
-            case 'play-audio':
-                // Resolve the background's tabs.sendMessage when the chunk finishes,
-                // so it can sequence the next chunk. `return true` keeps the channel
-                // open for the async sendResponse (required by Chrome).
-                playAudio(message.audio)
-                    .then(() => sendResponse({ done: true }))
-                    .catch(() => sendResponse({ done: false }));
-                return true;
-            case 'stop-audio':
-                stopAudio();
-                break;
-            case 'playback-finished':
-                clearHighlight();
-                showStatusBar('Done.');
-                setTimeout(hideStatusBar, 1500);
+            case 'start-reading':
+                startReading(message).catch(console.error);
                 break;
             case 'playback-stopped':
-                stopAudio();
+                stopReading();
                 clearHighlight();
                 hideStatusBar();
                 break;
             case 'playback-error':
-                stopAudio();
+                stopReading();
                 clearHighlight();
                 showStatusBar(`Error: ${message.error}`);
                 setTimeout(hideStatusBar, 4000);

@@ -4,9 +4,15 @@
  *
  * Responsibilities:
  *  - Register the context-menu item
- *  - Fetch audio from the Lyra (Kokoro/MLX) server
- *  - Play audio injected into the active tab
- *  - Broadcast playback state and chunk highlights to content scripts
+ *  - Split text into chunks and hand them to the tab's content script, which
+ *    plays them in order (and asks for upcoming chunks while one plays)
+ *  - Fetch audio for each chunk from the Lyra (Kokoro/MLX) server on request
+ *  - Broadcast Stop to content scripts
+ *
+ * The read loop lives in the content script, not here: an MV3 service worker is
+ * shut down after about 30 seconds without events, so a loop here that waited on a
+ * long chunk's playback was killed partway through long pages. Each chunk the page
+ * asks for is a fresh event, which keeps the worker alive (or wakes it) as needed.
  */
 // Cross-browser API shim (Firefox uses `browser`, Chrome uses `chrome`).
 // Both are declared as globals in eslint.config.js no import needed.
@@ -18,21 +24,23 @@ const DEFAULT_SERVER_URL = 'http://127.0.0.1:8000';
 const DEFAULT_VOICE = 'af_heart';
 const DEFAULT_MODEL = 'mlx-community/Kokoro-82M-bf16';
 const CONTEXT_MENU_ID = 'lyra-read-selection';
-/** A chunk taking longer than this is probably loading (or downloading) a model. */
-const SLOW_REQUEST_MS = 8000;
+/** The first chunk is kept short so reading starts quickly. */
+const FIRST_CHUNK_MAX = 180;
+/** Later chunks are generated while the previous one plays, so they can be longer. */
+const CHUNK_MAX = 450;
 // ---------------------------------------------------------------------------
 // Playback cancellation state
 // ---------------------------------------------------------------------------
 /**
- * Monotonic id for the active read. Each call to speakInTab claims the next id;
- * a running loop bails the moment `playbackSession` moves past its own id, so
- * pressing Stop (which bumps the id) or starting a new read cancels the old one.
+ * The read each tab is currently on. A `generate` request carrying another read's id
+ * is from a read that has since been replaced or stopped, so it is refused. This is
+ * lost if the worker restarts, in which case every request is served.
  */
-let playbackSession = 0;
-/** Tab that owns the current read, used when Stop is clicked from another tab. */
-let playbackTabId = null;
-/** AbortController for the in-flight chunk fetch, so Stop can cancel mid-request. */
-let activeFetch = null;
+const activeReads = new Map();
+/** Reads that were stopped or replaced; their late `generate` requests are refused. */
+const endedReads = new Set();
+/** In-flight chunk fetches per tab, so Stop (or a new read) can cancel them. */
+const activeFetches = new Map();
 // ---------------------------------------------------------------------------
 // Storage helpers
 // ---------------------------------------------------------------------------
@@ -97,23 +105,18 @@ async function handleMessage(message, sender) {
         return { ok: true };
     }
     if (action === 'stop') {
-        // Invalidate any running read loop and abort an in-flight fetch.
-        playbackSession++;
-        const readingTabId = playbackTabId;
-        playbackTabId = null;
-        activeFetch?.abort();
-        activeFetch = null;
-        const tabId = sender.tab?.id ?? (await getActiveTabId());
-        const tabsToStop = new Set();
-        if (readingTabId !== null)
-            tabsToStop.add(readingTabId);
-        if (tabId !== null)
-            tabsToStop.add(tabId);
-        for (const targetTabId of tabsToStop) {
-            await stopAudioInTab(targetTabId); // halt audio already playing in the page
-            notifyTab(targetTabId, { action: 'playback-stopped' });
-        }
+        // The tab that is reading may not be the one Stop came from (the popup, another
+        // tab), and the worker may have restarted since the read began, so tell every tab.
+        endAllReads();
+        for (const tabId of await getAllTabIds())
+            notifyTab(tabId, { action: 'playback-stopped' });
         return { ok: true };
+    }
+    if (action === 'generate') {
+        const tabId = sender.tab?.id;
+        if (tabId === undefined)
+            return { ok: false, error: 'No tab' };
+        return generateChunk(tabId, message);
     }
     if (action === 'get-voices') {
         const { serverUrl, model } = message;
@@ -136,80 +139,83 @@ async function handleMessage(message, sender) {
 // TTS core
 // ---------------------------------------------------------------------------
 /**
- * Generate speech for each chunk of text, highlighting and playing sequentially.
+ * Start reading `text` aloud in a tab: split it into chunks and hand them to the
+ * tab's content script, which highlights and plays them in order and requests the
+ * audio for each (a few chunks ahead) through `generateChunk`.
  */
 async function speakInTab(tabId, text, voice, serverUrl, model, language) {
-    // Claim this read; any older loop will see playbackSession move past its id.
-    const session = ++playbackSession;
-    const previousTabId = playbackTabId;
-    playbackTabId = tabId;
-    activeFetch?.abort();
-    activeFetch = null;
-    if (previousTabId !== null && previousTabId !== tabId) {
-        await stopAudioInTab(previousTabId);
-        notifyTab(previousTabId, { action: 'playback-stopped' });
+    // Only one read at a time: stop any other tab's read and drop stale fetches.
+    for (const otherTabId of activeReads.keys()) {
+        if (otherTabId !== tabId)
+            notifyTab(otherTabId, { action: 'playback-stopped' });
     }
-    await stopAudioInTab(tabId); // stop audio lingering from a previous read
-    if (session !== playbackSession)
+    endAllReads();
+    // Chunks with nothing to say (e.g. a run of dashes) make the server fail; skip them.
+    const chunks = chunkText(text, CHUNK_MAX, FIRST_CHUNK_MAX).filter((c) => /[\p{L}\p{N}]/u.test(c));
+    if (chunks.length === 0) {
+        notifyTab(tabId, { action: 'playback-error', error: 'Nothing to read' });
         return;
-    notifyTab(tabId, { action: 'playback-started', text });
+    }
+    const readId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    activeReads.set(tabId, readId);
+    notifyTab(tabId, {
+        action: 'start-reading',
+        readId,
+        chunks,
+        voice,
+        serverUrl,
+        model,
+        language,
+    });
+}
+/**
+ * Generate the audio for one chunk, on request from the content script reading it.
+ * Returns the raw base64 WAV and the status-bar label for it.
+ */
+async function generateChunk(tabId, message) {
+    const { text, voice = '', serverUrl = DEFAULT_SERVER_URL, model = '', language, readId, } = message;
+    if (!text)
+        return { ok: false, error: 'No text provided' };
+    const current = activeReads.get(tabId);
+    if ((current !== undefined && current !== readId) || (readId && endedReads.has(readId))) {
+        return { ok: false, cancelled: true };
+    }
+    if (current === undefined && readId)
+        activeReads.set(tabId, readId); // worker restarted
+    const controller = new AbortController();
+    let fetches = activeFetches.get(tabId);
+    if (!fetches)
+        activeFetches.set(tabId, (fetches = new Set()));
+    fetches.add(controller);
     try {
-        const chunks = chunkText(text);
-        let statusLabel = '';
-        for (const chunk of chunks) {
-            if (session !== playbackSession)
-                return; // stopped or superseded
-            // Signal content script to highlight this chunk before fetching audio
-            notifyTab(tabId, { action: 'chunk-highlight', text: chunk });
-            const controller = new AbortController();
-            activeFetch = controller;
-            // The server gives no progress while it loads a model, and switching to one not
-            // used before downloads it (and converts it, for German), so say so when a chunk is slow.
-            const slowTimer = setTimeout(() => {
-                notifyTab(tabId, {
-                    action: 'playback-status',
-                    text: 'Loading model… the first use downloads it, which can take a while',
-                });
-                statusLabel = '';
-            }, SLOW_REQUEST_MS);
-            let result;
-            try {
-                result = await fetchTTS(chunk, voice, serverUrl, model, language, controller.signal);
-            }
-            catch (err) {
-                // A deliberate stop aborts the fetch — swallow it, don't show an error.
-                if (controller.signal.aborted || session !== playbackSession)
-                    return;
-                throw err;
-            }
-            finally {
-                clearTimeout(slowTimer);
-                if (activeFetch === controller)
-                    activeFetch = null;
-            }
-            if (session !== playbackSession)
-                return; // stopped while fetching
-            const label = await describeResult(result, model, serverUrl);
-            if (label !== statusLabel) {
-                statusLabel = label;
-                notifyTab(tabId, { action: 'playback-status', text: label });
-            }
-            await playAudioInTab(tabId, result.audio);
-            if (session !== playbackSession)
-                return; // stopped during playback
-        }
-        // Clear highlight after all chunks finish
-        notifyTab(tabId, { action: 'chunk-highlight', text: null });
-        notifyTab(tabId, { action: 'playback-finished' });
+        const result = await fetchTTS(text, voice, serverUrl, model, language, controller.signal);
+        const label = await describeResult(result, model, serverUrl);
+        return { ok: true, audio: result.audio, label };
     }
     catch (err) {
-        notifyTab(tabId, { action: 'chunk-highlight', text: null });
-        notifyTab(tabId, { action: 'playback-error', error: err.message });
+        // A deliberate stop aborts the fetch — report it as cancelled, not as an error.
+        if (controller.signal.aborted)
+            return { ok: false, cancelled: true };
+        return { ok: false, error: err.message };
     }
     finally {
-        if (session === playbackSession && playbackTabId === tabId)
-            playbackTabId = null;
+        fetches.delete(controller);
+        if (fetches.size === 0)
+            activeFetches.delete(tabId);
     }
+}
+/** Mark every read as ended and abort their in-flight fetches. */
+function endAllReads() {
+    for (const readId of activeReads.values())
+        endedReads.add(readId);
+    activeReads.clear();
+    for (const tabId of activeFetches.keys())
+        abortFetches(tabId);
+}
+function abortFetches(tabId) {
+    for (const controller of activeFetches.get(tabId) ?? [])
+        controller.abort();
+    activeFetches.delete(tabId);
 }
 /** Model display names per server URL, for naming a model the server switched to. */
 const modelNames = new Map();
@@ -263,9 +269,12 @@ async function fetchTTS(text, voice, serverUrl, model, language, signal) {
     }
     const arrayBuffer = await response.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
+    // Build the binary string in slices: one call per byte is slow for long chunks'
+    // audio, and one call for everything overflows the argument limit.
     let binary = '';
-    for (const b of bytes)
-        binary += String.fromCharCode(b);
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    }
     return {
         audio: btoa(binary), // raw base64, no data: prefix
         model: response.headers.get('X-Model'),
@@ -312,23 +321,59 @@ async function fetchHealth(serverUrl) {
 // Text chunking
 // ---------------------------------------------------------------------------
 /**
- * Split text at sentence boundaries into chunks of at most `maxLen` characters.
- * Recognises Latin, CJK (。！？) and Devanagari (।) sentence marks.
+ * Split text into chunks of at most `maxLen` characters, for speaking one at a time.
+ *
+ * Chunks break at sentence marks (Latin, CJK 。！？ and Devanagari ।) and line breaks,
+ * and pack as many whole sentences as fit. A sentence longer than the limit is cut
+ * at a comma or a space (or hard, for a run with neither), so no chunk ever exceeds
+ * the limit: one huge chunk is slow to generate and the server rejects text over
+ * 5000 characters, which used to end reading of long pages partway through.
+ *
+ * `firstMaxLen` caps the first chunk separately, so reading starts after generating a
+ * short passage instead of a full-size one.
+ *
+ * Keep in sync with src/chunk-text.ts, the copy the unit tests import.
  */
-function chunkText(text, maxLen = 500) {
-    const sentences = text.match(/[^.!?。！？｡।]+[.!?。！？｡।]*/g) ?? [text];
+function chunkText(text, maxLen = 500, firstMaxLen = maxLen) {
+    const pieces = (text.match(/[^.!?。！？｡।\n]*(?:[.!?。！？｡।]+|\n+|$)/g) ?? [text]).filter(Boolean);
     const chunks = [];
     let current = '';
-    for (const sentence of sentences) {
-        if (current.length + sentence.length > maxLen && current.length > 0) {
-            chunks.push(current.trim());
+    for (let rest of pieces) {
+        while (rest) {
+            const limit = chunks.length === 0 ? firstMaxLen : maxLen;
+            if (current.length + rest.length <= limit) {
+                current += rest;
+                break;
+            }
+            if (current.trim()) {
+                chunks.push(current.trim());
+                current = '';
+                continue;
+            }
+            // Nothing buffered and the sentence alone is too long: cut it.
+            rest = current + rest;
             current = '';
+            const cut = cutPoint(rest, limit);
+            const head = rest.slice(0, cut).trim();
+            if (head)
+                chunks.push(head);
+            rest = rest.slice(cut);
         }
-        current += sentence;
     }
     if (current.trim())
         chunks.push(current.trim());
     return chunks.length > 0 ? chunks : [text];
+}
+/** Where to cut `s` so the head is at most `limit` long: after a comma, else a space. */
+function cutPoint(s, limit) {
+    const head = s.slice(0, limit + 1);
+    const clause = Math.max(...[',', ';', ':', '，', '、', '；'].map((m) => head.lastIndexOf(m)));
+    if (clause >= limit / 2 && clause < limit)
+        return clause + 1;
+    const space = head.search(/\s\S*$/);
+    if (space > 0)
+        return space;
+    return limit;
 }
 // ---------------------------------------------------------------------------
 // Tab helpers
@@ -338,39 +383,15 @@ function notifyTab(tabId, payload) {
         // Tab may not have content script — safe to ignore
     });
 }
+async function getAllTabIds() {
+    const tabs = await api.tabs.query({});
+    return tabs.map((t) => t.id).filter((id) => id !== undefined);
+}
 async function getActiveTabId() {
     return new Promise((resolve) => {
         api.tabs.query({ active: true, currentWindow: true }, (tabs) => {
             resolve(tabs[0]?.id ?? null);
         });
     });
-}
-// ---------------------------------------------------------------------------
-// Audio playback (delegated to the content script)
-// ---------------------------------------------------------------------------
-/**
- * Hand a chunk of base64-encoded WAV audio to the content script and wait until
- * it finishes playing.
- *
- * Playback happens inside the already-injected content script (via the Web
- * Audio API) rather than through scripting.executeScript. The content script
- * matches every http/https page, so this works without host permissions or an
- * activeTab grant — which matters because the in-page selection button is not a
- * gesture that grants activeTab the way clicking the toolbar action is.
- *
- * decodeAudioData on an ArrayBuffer also sidesteps the page's media-src CSP, the
- * same reason fetchTTS returns raw base64 rather than a data: URL.
- */
-async function playAudioInTab(tabId, audioBase64) {
-    try {
-        await api.tabs.sendMessage(tabId, { action: 'play-audio', audio: audioBase64 });
-    }
-    catch {
-        // Tab closed or no content script present — safe to ignore.
-    }
-}
-/** Tell the content script to halt any audio currently playing in the tab. */
-async function stopAudioInTab(tabId) {
-    notifyTab(tabId, { action: 'stop-audio' });
 }
 export {};
