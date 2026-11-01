@@ -2,6 +2,8 @@
  * Lyra TTS: Popup Script
  */
 
+import { formatSpeed, getSettings, saveSettings } from '../settings.js';
+
 const api: typeof chrome = typeof browser !== 'undefined' ? browser : chrome;
 
 // ---------------------------------------------------------------------------
@@ -16,6 +18,8 @@ const btnSelection = document.getElementById('btn-read-selection') as HTMLButton
 const btnPage = document.getElementById('btn-read-page') as HTMLButtonElement;
 const btnStop = document.getElementById('btn-stop') as HTMLButtonElement;
 const optionsLink = document.getElementById('options-link') as HTMLAnchorElement;
+const speedInput = document.getElementById('speed') as HTMLInputElement;
+const speedValue = document.getElementById('speed-value') as HTMLOutputElement;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -27,12 +31,6 @@ interface Voice {
   language?: string | null;
   gender?: string | null;
   default?: boolean;
-}
-
-interface Settings {
-  serverUrl: string;
-  defaultVoice: string;
-  selectedModel: string;
 }
 
 // Full voice list for the active model; the visible voice dropdown is a
@@ -53,7 +51,16 @@ interface BackgroundResponse {
 // ---------------------------------------------------------------------------
 
 async function init(): Promise<void> {
-  const { serverUrl, defaultVoice, selectedModel } = await getSettings();
+  const { serverUrl, defaultVoice, selectedModel, speed } = await getSettings();
+
+  // Speed is saved as it changes; the read in progress picks it up from its next chunk.
+  speedInput.value = String(speed);
+  speedValue.textContent = formatSpeed(speed);
+  speedInput.addEventListener('input', () => {
+    const value = Number(speedInput.value);
+    speedValue.textContent = formatSpeed(value);
+    saveSettings({ speed: value });
+  });
 
   // Check server health
   const health = await sendBackground({ action: 'health', serverUrl });
@@ -265,21 +272,6 @@ function setPlaying(playing: boolean): void {
 // ---------------------------------------------------------------------------
 // Utilities
 // ---------------------------------------------------------------------------
-
-async function getSettings(): Promise<Settings> {
-  return new Promise((resolve) => {
-    api.storage.local.get(
-      {
-        serverUrl: 'http://127.0.0.1:8000',
-        defaultVoice: 'af_heart',
-        selectedModel: 'mlx-community/Kokoro-82M-bf16',
-      },
-      (items) => {
-        resolve(items as unknown as Settings);
-      },
-    );
-  });
-}
 
 function sendBackground(message: Record<string, unknown>): Promise<BackgroundResponse> {
   return new Promise((resolve, reject) => {

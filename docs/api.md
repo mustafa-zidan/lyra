@@ -125,6 +125,7 @@ Synthesises speech from text and returns a WAV audio file.
 | `voice`    | string | No       | Server default (e.g. `af_heart`) | A voice ID from `GET /voices`; if omitted and the server default isn't a voice of `model`, the model's first voice is used |
 | `model`    | string | No       | Server default                   | A model ID from `GET /models`                 |
 | `language` | string | No       | -                                | BCP-47 hint, e.g. the page's `lang` (`pt-BR`) |
+| `speed`    | number | No       | `1.0`                            | Speaking rate, 0.5 – 2.0 (outside the range: 422) |
 | `format`   | string | No       | `"wav"`                          | Audio format, only `"wav"` supported          |
 
 The language is resolved as: non-Latin script in `text` (Japanese, Chinese, Hindi), then

@@ -16,6 +16,7 @@
  */
 
 import { chunkText } from './chunk-text.js';
+import { DEFAULT_SETTINGS, getSettings, MAX_SPEED, MIN_SPEED } from './settings.js';
 
 // Cross-browser API shim (Firefox uses `browser`, Chrome uses `chrome`).
 // Both are declared as globals in eslint.config.js no import needed.
@@ -26,9 +27,7 @@ const api: typeof chrome | null =
 // Constants / defaults
 // ---------------------------------------------------------------------------
 
-const DEFAULT_SERVER_URL = 'http://127.0.0.1:8000';
-const DEFAULT_VOICE = 'af_heart';
-const DEFAULT_MODEL = 'mlx-community/Kokoro-82M-bf16';
+const DEFAULT_SERVER_URL = DEFAULT_SETTINGS.serverUrl;
 const CONTEXT_MENU_ID = 'lyra-read-selection';
 /** The first chunk is kept short so reading starts quickly. */
 const FIRST_CHUNK_MAX = 180;
@@ -53,12 +52,6 @@ const activeFetches = new Map<number, Set<AbortController>>();
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface Settings {
-  serverUrl: string;
-  defaultVoice: string;
-  selectedModel: string;
-}
 
 interface Voice {
   id: string;
@@ -98,21 +91,6 @@ interface TTSResult {
 interface HealthStatus {
   available: boolean;
   status: string;
-}
-
-// ---------------------------------------------------------------------------
-// Storage helpers
-// ---------------------------------------------------------------------------
-
-async function getSettings(): Promise<Settings> {
-  return new Promise((resolve) => {
-    api!.storage.local.get(
-      { serverUrl: DEFAULT_SERVER_URL, defaultVoice: DEFAULT_VOICE, selectedModel: DEFAULT_MODEL },
-      (items) => {
-        resolve(items as unknown as Settings);
-      },
-    );
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -276,12 +254,22 @@ async function generateChunk(tabId: number, message: ExtMessage): Promise<Record
   }
   if (current === undefined && readId) activeReads.set(tabId, readId); // worker restarted
 
+  // Read per chunk, so a speed change in the popup applies from the next chunk on.
+  const { speed } = await getSettings();
   const controller = new AbortController();
   let fetches = activeFetches.get(tabId);
   if (!fetches) activeFetches.set(tabId, (fetches = new Set()));
   fetches.add(controller);
   try {
-    const result = await fetchTTS(text, voice, serverUrl, model, language, controller.signal);
+    const result = await fetchTTS(
+      text,
+      voice,
+      serverUrl,
+      model,
+      language,
+      speed,
+      controller.signal,
+    );
     const label = await describeResult(result, model, serverUrl);
     return { ok: true, audio: result.audio, label };
   } catch (err) {
@@ -347,13 +335,15 @@ async function fetchTTS(
   serverUrl: string,
   model: string,
   language: string | undefined,
+  speed: number,
   signal?: AbortSignal,
 ): Promise<TTSResult> {
   const url = `${serverUrl}/tts/generate`;
-  const body: Record<string, string> = { text };
+  const body: Record<string, string | number> = { text };
   if (voice) body.voice = voice;
   if (model) body.model = model;
   if (language) body.language = language;
+  if (speed && speed !== 1) body.speed = Math.min(MAX_SPEED, Math.max(MIN_SPEED, speed));
 
   const response = await fetch(url, {
     method: 'POST',

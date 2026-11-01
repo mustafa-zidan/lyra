@@ -40,6 +40,13 @@ class TTSRequest(BaseModel):
         ),
         examples=["ja", "pt-BR"],
     )
+    speed: float = Field(
+        default=1.0,
+        ge=0.5,
+        le=2.0,
+        description="Speaking rate: 1.0 is normal, 0.5 half as fast, 2.0 twice as fast.",
+        examples=[0.8],
+    )
     format: str = Field(
         default="wav",
         description="Audio format. Currently only 'wav' is supported.",

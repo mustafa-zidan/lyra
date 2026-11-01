@@ -141,6 +141,14 @@ pnpm run build:ts
 2. Click **Load Temporary Add-on…**
 3. Select `extension/manifest.json`
 
+### 4. Read aloud
+
+- Select text and click **Listen**, or right-click it and choose **Read selection aloud with
+  Lyra**.
+- In the popup: **Read selection** or **Read page** (the article, extracted with Readability).
+- **Speed** (popup and settings, 0.5× – 2×) applies from the next passage, so you can change it
+  mid-read.
+
 ---
 
 ## Configuration

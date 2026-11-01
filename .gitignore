@@ -45,3 +45,4 @@ extension/chunk-text.js
 extension/content.js
 extension/popup/popup.js
 extension/options/options.js
+extension/settings.js

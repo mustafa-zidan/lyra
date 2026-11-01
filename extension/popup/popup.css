@@ -159,6 +159,22 @@ body {
     box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+.label--row {
+    display: flex;
+    justify-content: space-between;
+}
+
+.label--row output {
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+
+.range {
+    width: 100%;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
 /* Actions */
 .actions {
   display: flex;

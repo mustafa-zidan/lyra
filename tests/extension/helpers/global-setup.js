@@ -47,6 +47,8 @@ const MODELS_RESPONSE = JSON.stringify({
 let server;
 /** Texts sent to /tts/generate, in arrival order; read and reset via /__tts-log. */
 const ttsLog = [];
+/** Full /tts/generate request bodies; read and reset via /__tts-requests. */
+const ttsRequests = [];
 
 export default async function globalSetup() {
   server = http.createServer((req, res) => {
@@ -88,14 +90,24 @@ export default async function globalSetup() {
       return;
     }
 
+    if (pathname === '/__tts-requests') {
+      if (req.method === 'DELETE') ttsRequests.length = 0;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(ttsRequests));
+      return;
+    }
+
     if (pathname === '/tts/generate' && req.method === 'POST') {
       let body = '';
       req.on('data', (d) => (body += d));
       req.on('end', () => {
         try {
-          ttsLog.push(JSON.parse(body).text);
+          const json = JSON.parse(body);
+          ttsLog.push(json.text);
+          ttsRequests.push(json);
         } catch {
           ttsLog.push(null);
+          ttsRequests.push(null);
         }
       });
       res.writeHead(200, {
