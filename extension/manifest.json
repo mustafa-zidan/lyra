@@ -32,6 +32,31 @@
     "default_title": "Lyra TTS"
   },
 
+  "commands": {
+    "read-selection": {
+      "suggested_key": { "default": "Alt+Shift+S" },
+      "description": "Read the selected text aloud"
+    },
+    "read-page": {
+      "suggested_key": { "default": "Alt+Shift+P" },
+      "description": "Read the page aloud"
+    },
+    "toggle-pause": {
+      "suggested_key": { "default": "Alt+Shift+Space" },
+      "description": "Pause or resume reading"
+    },
+    "stop": {
+      "suggested_key": { "default": "Alt+Shift+X" },
+      "description": "Stop reading"
+    },
+    "back": {
+      "description": "Back one passage"
+    },
+    "forward": {
+      "description": "Forward one passage"
+    }
+  },
+
   "options_ui": {
     "page": "options/options.html",
     "open_in_tab": false

@@ -96,7 +96,7 @@ async function init(): Promise<void> {
 
   // Button handlers
   btnSelection.addEventListener('click', () => readSelection(serverUrl, selectedModel));
-  btnPage.addEventListener('click', () => readPage(serverUrl, selectedModel));
+  btnPage.addEventListener('click', readPage);
   btnStop.addEventListener('click', stopPlayback);
   btnPause.addEventListener('click', () => control('toggle-pause'));
   btnBack.addEventListener('click', () => control('back'));
@@ -124,7 +124,7 @@ async function refreshPlayback(): Promise<void> {
 }
 
 async function control(command: 'toggle-pause' | 'back' | 'forward'): Promise<void> {
-  await sendBackground({ action: 'control', command });
+  await sendBackground({ action: 'command', command });
   // The content script handles the command asynchronously; read the new state after it.
   setTimeout(refreshPlayback, 100);
 }
@@ -158,58 +158,12 @@ async function readSelection(serverUrl: string, model: string): Promise<void> {
   });
 }
 
-async function readPage(serverUrl: string, model: string): Promise<void> {
-  const [tab] = await getTabs();
-  if (!tab?.id) return;
-
-  // Inject Readability.js into the page's content-script world
-  await api.scripting.executeScript({
-    target: { tabId: tab.id },
-    files: ['/vendor/Readability.js'],
-  });
-
-  // Extract readable content with fallback chain
-  const [result] = await api.scripting.executeScript({
-    target: { tabId: tab.id },
-    func: () => {
-      const language = document.documentElement.lang || undefined;
-      const clone = document.cloneNode(true) as Document;
-      try {
-        // @ts-expect-error Readability injected as global by prior executeScript
-        const article = new Readability(clone).parse();
-        if (article?.textContent?.trim()) {
-          return { text: article.textContent.trim(), language: article.lang || language };
-        }
-      } catch {
-        /* fall through to fallback */
-      }
-
-      // Fallback: semantic HTML elements
-      for (const sel of ['article', 'main', '[role="main"]']) {
-        const el = document.querySelector(sel);
-        if (el?.textContent?.trim() && el.textContent.trim().length > 100) {
-          return { text: el.textContent.trim(), language };
-        }
-      }
-      // Last resort: full page text
-      return { text: document.body.innerText, language };
-    },
-  });
-
-  const page = result?.result as { text?: string; language?: string } | undefined;
-  const text = page?.text?.trim();
-  if (!text) return;
-
+async function readPage(): Promise<void> {
   setPlaying(true);
   btnPause.textContent = 'Pause';
-  await sendBackground({
-    action: 'speak',
-    text,
-    voice: voiceSelect.value,
-    serverUrl,
-    model,
-    language: page?.language,
-  });
+  // The background extracts the article (Readability) and starts the read.
+  const res = await sendBackground({ action: 'read-page', voice: voiceSelect.value });
+  if (!res.ok) setPlaying(false);
 }
 
 async function stopPlayback(): Promise<void> {

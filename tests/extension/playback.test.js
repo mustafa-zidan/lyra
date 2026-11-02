@@ -132,12 +132,14 @@ test.describe('Playback controls', () => {
     // The popup opened as a tab is its own active tab, so it can't show this read's
     // controls; send what its Pause button sends and check the reading tab.
     await popup.evaluate(() =>
-      chrome.runtime.sendMessage({ action: 'control', command: 'toggle-pause' }),
+      chrome.runtime.sendMessage({ action: 'command', command: 'toggle-pause' }),
     );
-    await expect.poll(() => send({ action: 'get-state' })).toEqual({
-      reading: true,
-      paused: true,
-    });
+    await expect
+      .poll(() => send({ action: 'get-state' }))
+      .toEqual({
+        reading: true,
+        paused: true,
+      });
     await expect(page.locator('#__lyra-pause')).toHaveAttribute('aria-label', 'Resume');
   });
 });

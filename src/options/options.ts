@@ -43,6 +43,8 @@ const highlightColorInput = document.getElementById('highlight-color') as HTMLIn
 const highlightStyleSelect = document.getElementById('highlight-style') as HTMLSelectElement;
 const highContrastInput = document.getElementById('high-contrast') as HTMLInputElement;
 const preview = document.getElementById('highlight-preview') as HTMLElement;
+const shortcutList = document.getElementById('shortcuts') as HTMLElement;
+const btnShortcuts = document.getElementById('btn-shortcuts') as HTMLButtonElement;
 
 let testAudio: HTMLAudioElement | null = null;
 let testAudioUrl: string | null = null;
@@ -462,6 +464,47 @@ async function testSound(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Keyboard shortcuts
+// ---------------------------------------------------------------------------
+
+/** List the extension's commands with the keys the browser has assigned to them. */
+async function showShortcuts(): Promise<void> {
+  const order = ['read-selection', 'read-page', 'toggle-pause', 'back', 'forward', 'stop'];
+  const rank = (name?: string) => {
+    const i = order.indexOf(name ?? '');
+    return i === -1 ? order.length : i;
+  };
+  const commands = (await api.commands.getAll()).sort((a, b) => rank(a.name) - rank(b.name));
+  shortcutList.innerHTML = '';
+  for (const command of commands) {
+    if (!command.description) continue; // the toolbar action's own entry
+    const name = document.createElement('dt');
+    name.textContent = command.description;
+    const keys = document.createElement('dd');
+    if (command.shortcut) {
+      const kbd = document.createElement('kbd');
+      kbd.textContent = command.shortcut;
+      keys.append(kbd);
+    } else {
+      keys.textContent = 'Not set';
+    }
+    shortcutList.append(name, keys);
+  }
+}
+
+/** Open the browser's shortcut settings (Chrome, Edge; Firefox 137+ has an API for it). */
+function openShortcutSettings(): void {
+  const commands = api.commands as typeof api.commands & { openShortcutSettings?: () => void };
+  if (commands.openShortcutSettings) {
+    commands.openShortcutSettings();
+  } else if (typeof browser !== 'undefined') {
+    alert('Open about:addons, click the gear menu and choose Manage Extension Shortcuts.');
+  } else {
+    api.tabs.create({ url: 'chrome://extensions/shortcuts' });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Save / Reset
 // ---------------------------------------------------------------------------
 
@@ -502,6 +545,7 @@ btnCheck.addEventListener('click', checkServer);
 btnSave.addEventListener('click', saveSettings);
 btnReset.addEventListener('click', resetSettings);
 btnTestSound.addEventListener('click', testSound);
+btnShortcuts.addEventListener('click', openShortcutSettings);
 speedInput.addEventListener('input', () => {
   speedValue.textContent = formatSpeed(Number(speedInput.value));
 });
@@ -524,6 +568,9 @@ modelSelect.addEventListener('change', async () => {
   await refreshVoices(serverUrl, modelSelect.value, '');
 });
 
-document.addEventListener('DOMContentLoaded', loadSettings);
+document.addEventListener('DOMContentLoaded', () => {
+  loadSettings();
+  showShortcuts().catch(() => {});
+});
 
 export {};

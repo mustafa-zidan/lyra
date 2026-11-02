@@ -9,7 +9,6 @@
 
 Accessibility issues (#3–#11), in dependency order:
 
-- [ ] #6 Keyboard shortcuts (`commands`): read selection, read page, pause/resume, stop
 - [ ] #7 "Read from here" context-menu item and Alt+click a paragraph
 - [ ] #3 Word highlight: server returns word timings (`X-Word-Timings`, Kokoro token timestamps for
   English, estimated from segment duration elsewhere); second highlight `lyra-word`
@@ -20,6 +19,15 @@ Accessibility issues (#3–#11), in dependency order:
 ## Backlog
 
 ## Done
+
+- [x] Keyboard shortcuts (#6). Manifest `commands`: read-selection (Alt+Shift+S), read-page (Alt+Shift+P),
+  toggle-pause (Alt+Shift+Space), stop (Alt+Shift+X), plus back/forward without default keys (four
+  suggested keys max). `runCommand` in the background handles `commands.onCommand`; the popup's playback
+  buttons send the same commands (`command` message, replaces `control`). Page extraction (Readability →
+  article/main → body) moved from the popup into the background (`read-page`), shared by popup and
+  shortcut. Options lists the assigned keys and opens the browser's shortcut settings. Verified: 4 new
+  Playwright tests (commands sent as messages; Playwright key presses don't reach browser accelerators and
+  macOS blocks osascript keystrokes here, so the real key path is untested), 55 Playwright tests pass.
 
 - [x] Pause/resume and back/forward (#5). The status bar gets back / pause / forward icon buttons while a
   read runs; the popup shows the same controls when its tab is reading (asks the content script with

@@ -70,9 +70,17 @@ interface ModelInfo {
 }
 
 interface ExtMessage {
-  action: 'speak' | 'stop' | 'control' | 'generate' | 'get-voices' | 'get-models' | 'health';
-  /** For `control`: what to do with the read in progress. */
-  command?: PlaybackCommand;
+  action:
+    | 'speak'
+    | 'read-page'
+    | 'stop'
+    | 'command'
+    | 'generate'
+    | 'get-voices'
+    | 'get-models'
+    | 'health';
+  /** For `command`: a keyboard-shortcut command name (see the manifest), e.g. `toggle-pause`. */
+  command?: string;
   text?: string;
   voice?: string;
   model?: string;
@@ -122,6 +130,11 @@ if (api) {
     await speakInTab(tab.id, text, defaultVoice, serverUrl, selectedModel, selection?.language);
   });
 
+  // Keyboard shortcuts (manifest `commands`; users can change the keys in the browser).
+  api.commands.onCommand.addListener((command, tab) => {
+    runCommand(command, tab?.id).catch(console.error);
+  });
+
   // ---------------------------------------------------------------------------
   // Message handling (from popup / content script)
   // ---------------------------------------------------------------------------
@@ -160,6 +173,12 @@ async function handleMessage(
     return { ok: true };
   }
 
+  if (action === 'read-page') {
+    const tabId = await getActiveTabId();
+    if (!tabId) return { ok: false, error: 'No active tab' };
+    return readPage(tabId, message.voice);
+  }
+
   if (action === 'stop') {
     // The tab that is reading may not be the one Stop came from (the popup, another
     // tab), and the worker may have restarted since the read began, so tell every tab.
@@ -168,8 +187,10 @@ async function handleMessage(
     return { ok: true };
   }
 
-  if (action === 'control') {
-    if (message.command) await controlPlayback(message.command);
+  if (action === 'command') {
+    // The popup's playback buttons run the same commands as the keyboard shortcuts,
+    // on the active tab.
+    if (message.command) await runCommand(message.command);
     return { ok: true };
   }
 
@@ -198,6 +219,90 @@ async function handleMessage(
   }
 
   return { ok: false, error: `Unknown action: ${action}` };
+}
+
+/** Run a keyboard shortcut. `tabId` is the active tab when the shortcut was pressed. */
+async function runCommand(command: string, tabId?: number): Promise<void> {
+  tabId ??= (await getActiveTabId()) ?? undefined;
+  switch (command) {
+    case 'read-selection': {
+      if (tabId === undefined) return;
+      const selection = (await api!.tabs
+        .sendMessage(tabId, { action: 'get-selection' })
+        .catch(() => undefined)) as { text?: string; language?: string } | undefined;
+      const text = selection?.text?.trim();
+      if (!text) {
+        notifyTab(tabId, { action: 'playback-error', error: 'Select some text first' });
+        return;
+      }
+      const { serverUrl, defaultVoice, selectedModel } = await getSettings();
+      await speakInTab(tabId, text, defaultVoice, serverUrl, selectedModel, selection?.language);
+      return;
+    }
+    case 'read-page':
+      if (tabId !== undefined) await readPage(tabId);
+      return;
+    case 'stop':
+      await handleMessage({ action: 'stop' }, {});
+      return;
+    case 'toggle-pause':
+    case 'back':
+    case 'forward':
+      await controlPlayback(command);
+      return;
+  }
+}
+
+/**
+ * Read a tab's article aloud: the Readability extraction, else its `article`/`main`
+ * element, else all of the body's text. `voice` defaults to the saved default voice.
+ */
+async function readPage(tabId: number, voice?: string): Promise<Record<string, unknown>> {
+  const page = await extractPage(tabId).catch(() => null);
+  const text = page?.text?.trim();
+  if (!text) {
+    notifyTab(tabId, { action: 'playback-error', error: 'No readable text on this page' });
+    return { ok: false, error: 'No readable text on this page' };
+  }
+  const { serverUrl, defaultVoice, selectedModel } = await getSettings();
+  await speakInTab(tabId, text, voice || defaultVoice, serverUrl, selectedModel, page?.language);
+  return { ok: true };
+}
+
+async function extractPage(tabId: number): Promise<{ text?: string; language?: string } | null> {
+  // Inject Readability.js into the page's content-script world
+  await api!.scripting.executeScript({
+    target: { tabId },
+    files: ['/vendor/Readability.js'],
+  });
+
+  const [result] = await api!.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      const language = document.documentElement.lang || undefined;
+      const clone = document.cloneNode(true) as Document;
+      try {
+        // @ts-expect-error Readability injected as global by prior executeScript
+        const article = new Readability(clone).parse();
+        if (article?.textContent?.trim()) {
+          return { text: article.textContent.trim(), language: article.lang || language };
+        }
+      } catch {
+        /* fall through to fallback */
+      }
+
+      // Fallback: semantic HTML elements
+      for (const sel of ['article', 'main', '[role="main"]']) {
+        const el = document.querySelector(sel);
+        if (el?.textContent?.trim() && el.textContent.trim().length > 100) {
+          return { text: el.textContent.trim(), language };
+        }
+      }
+      // Last resort: full page text
+      return { text: document.body.innerText, language };
+    },
+  });
+  return (result?.result as { text?: string; language?: string } | undefined) ?? null;
 }
 
 // ---------------------------------------------------------------------------

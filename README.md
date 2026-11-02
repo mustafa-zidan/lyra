@@ -149,6 +149,12 @@ pnpm run build:ts
 - While reading, the status bar (and the popup) has **back**, **pause/resume** and **forward**.
   Back goes to the previous passage, or restarts the current one if it has played for more than
   two seconds, so a hard sentence is one click away.
+- **Keyboard shortcuts**: <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> read selection,
+  <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> read page, <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd>
+  pause/resume, <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd> stop (<kbd>Option</kbd> on macOS). Back and
+  forward have no default keys (browsers allow four per extension). Change them at
+  `chrome://extensions/shortcuts`, or in Firefox under about:addons → gear menu → Manage Extension
+  Shortcuts; the settings page lists the current keys.
 - **Speed** (popup and settings, 0.5× – 2×) applies from the next passage, so you can change it
   mid-read.
 - **Highlight** (settings): the passage colour (presets or a custom colour), background,
