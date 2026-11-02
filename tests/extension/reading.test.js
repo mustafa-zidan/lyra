@@ -34,6 +34,13 @@ async function readParagraph(context, mockServerUrl, selector = 'p') {
   return page;
 }
 
+/** Poll the page's injected highlight stylesheet (a <style> has no rendered text). */
+function expectStyle(page) {
+  return expect.poll(() =>
+    page.evaluate(() => document.getElementById('__lyra-hl-style')?.textContent ?? ''),
+  );
+}
+
 /**
  * Requests for the fixture's first paragraph (what readParagraph reads). Other test files
  * use the mock server at the same time, so their requests are filtered out.
@@ -78,5 +85,61 @@ test.describe('Reading speed', () => {
     const requests = await ttsRequests(mockServerUrl);
     expect(requests.length).toBeGreaterThan(0);
     for (const body of requests) expect(body).not.toHaveProperty('speed');
+  });
+});
+
+test.describe('Highlight colour and style', () => {
+  test('a preset chosen in the options page is saved', async ({ context, extensionId }) => {
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extensionId}/options/options.html`);
+    await options.locator('input[aria-label="Yellow"]').check();
+    await options.locator('#highlight-style').selectOption('both');
+    await options.locator('#btn-save').click();
+    await expect(options.locator('#save-msg')).toHaveText('Settings saved!');
+    const saved = await options.evaluate(() =>
+      chrome.storage.local.get(['highlightColor', 'highlightStyle', 'highContrast']),
+    );
+    expect(saved).toEqual({
+      highlightColor: '#fff3a3',
+      highlightStyle: 'both',
+      highContrast: false,
+    });
+  });
+
+  test('pages restyle the highlight when the settings change', async ({
+    context,
+    extensionId,
+    mockServerUrl,
+  }) => {
+    const page = await context.newPage();
+    await page.goto(`${mockServerUrl}/fixtures/test-page.html`);
+    await page.waitForFunction(() => !!document.getElementById('__lyra-hl-style'));
+    const style = expectStyle(page);
+    await style.toContain('background-color: #dcd7fc');
+
+    await prepareSettings(context, extensionId, {
+      highlightColor: '#c8f2c2',
+      highlightStyle: 'underline',
+    });
+    await style.toContain('text-decoration: underline');
+    await style.toContain('#c8f2c2');
+    await style.not.toContain('background-color: #c8f2c2');
+
+    await prepareSettings(context, extensionId, { highContrast: true });
+    await style.toContain('background-color: #1b1b2a; color: #ffffff');
+  });
+
+  test('only #rrggbb colours reach the page stylesheet', async ({
+    context,
+    extensionId,
+    mockServerUrl,
+  }) => {
+    const page = await context.newPage();
+    await page.goto(`${mockServerUrl}/fixtures/test-page.html`);
+    await page.waitForFunction(() => !!document.getElementById('__lyra-hl-style'));
+    await prepareSettings(context, extensionId, { highlightColor: 'red; } body { display: none' });
+    await page.waitForTimeout(300);
+    await expectStyle(page).toContain('background-color: #dcd7fc');
+    await expectStyle(page).not.toContain('display: none');
   });
 });

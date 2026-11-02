@@ -96,6 +96,45 @@
         </div>
       </section>
 
+      <section class="card">
+        <h2>Highlight</h2>
+
+        <fieldset class="field">
+          <legend class="field__label">
+            Passage colour
+            <span class="field__hint">The sentence or passage being read.</span>
+          </legend>
+          <div class="swatches" id="highlight-swatches">
+            <label class="swatch swatch--custom" title="Custom colour">
+              <input id="highlight-color" type="color" value="#dcd7fc" aria-label="Custom passage colour" />
+            </label>
+          </div>
+        </fieldset>
+
+        <div class="field">
+          <label for="highlight-style" class="field__label">
+            Style
+            <span class="field__hint">How the passage is marked.</span>
+          </label>
+          <select id="highlight-style" class="field__input">
+            <option value="background">Background</option>
+            <option value="underline">Underline</option>
+            <option value="both">Background and underline</option>
+          </select>
+        </div>
+
+        <label class="checkbox">
+          <input id="high-contrast" type="checkbox" />
+          High contrast (light text on a dark highlight)
+        </label>
+
+        <p class="preview" id="highlight-preview" aria-label="Highlight preview">
+          Orpheus went down to the underworld.
+          <span class="preview__chunk">He sang so sweetly that Hades wept,</span>
+          and let Eurydice follow him home.
+        </p>
+      </section>
+
       <div class="actions">
         <button id="btn-save" class="btn btn--primary">Save settings</button>
         <button id="btn-reset" class="btn btn--ghost">Reset to defaults</button>

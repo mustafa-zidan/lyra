@@ -6,7 +6,9 @@ import {
   DEFAULT_SETTINGS,
   formatSpeed,
   getSettings,
+  HIGHLIGHT_PRESETS,
   saveSettings as save,
+  type HighlightStyle,
   type Settings,
 } from '../settings.js';
 
@@ -36,6 +38,11 @@ const saveMsg = document.getElementById('save-msg') as HTMLElement;
 const testStatus = document.getElementById('test-status') as HTMLElement;
 const speedInput = document.getElementById('speed') as HTMLInputElement;
 const speedValue = document.getElementById('speed-value') as HTMLOutputElement;
+const swatches = document.getElementById('highlight-swatches') as HTMLElement;
+const highlightColorInput = document.getElementById('highlight-color') as HTMLInputElement;
+const highlightStyleSelect = document.getElementById('highlight-style') as HTMLSelectElement;
+const highContrastInput = document.getElementById('high-contrast') as HTMLInputElement;
+const preview = document.getElementById('highlight-preview') as HTMLElement;
 
 let testAudio: HTMLAudioElement | null = null;
 let testAudioUrl: string | null = null;
@@ -272,10 +279,64 @@ function setStatus(message: string, type: 'idle' | 'ok' | 'error'): void {
   serverStatus.className = `server-status server-status--${type}`;
 }
 
-/** Fill the Reading card's controls from saved (or default) settings. */
+/** Fill the Reading and Highlight cards' controls from saved (or default) settings. */
 function showReadingSettings(settings: Settings): void {
   speedInput.value = String(settings.speed);
   speedValue.textContent = formatSpeed(settings.speed);
+  highlightColorInput.value = settings.highlightColor;
+  highlightStyleSelect.value = settings.highlightStyle;
+  highContrastInput.checked = settings.highContrast;
+  syncSwatches();
+  updatePreview();
+}
+
+/** The colour swatches: one radio per preset, then the custom colour picker. */
+function renderSwatches(): void {
+  for (const preset of HIGHLIGHT_PRESETS) {
+    const label = document.createElement('label');
+    label.className = 'swatch';
+    label.title = preset.name;
+    label.style.background = preset.color;
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'highlight-preset';
+    radio.value = preset.color;
+    radio.setAttribute('aria-label', preset.name);
+    radio.addEventListener('change', () => {
+      highlightColorInput.value = preset.color;
+      updatePreview();
+    });
+    label.append(radio);
+    swatches.insertBefore(label, swatches.lastElementChild);
+  }
+}
+
+/** Check the preset matching the chosen colour, or none for a custom colour. */
+function syncSwatches(): void {
+  const color = highlightColorInput.value.toLowerCase();
+  for (const radio of swatches.querySelectorAll<HTMLInputElement>('input[type="radio"]')) {
+    radio.checked = radio.value === color;
+  }
+  const custom = highlightColorInput.closest('.swatch') as HTMLElement;
+  const isPreset = HIGHLIGHT_PRESETS.some((p) => p.color === color);
+  custom.style.boxShadow = isPreset ? '' : '0 0 0 2px var(--bg), 0 0 0 4px var(--accent)';
+}
+
+/** Show the chosen colours and style on the sample sentence, as the page will. */
+function updatePreview(): void {
+  const chunk = preview.querySelector('.preview__chunk') as HTMLElement;
+  const color = highlightColorInput.value;
+  const style = highlightStyleSelect.value as HighlightStyle;
+  chunk.style.cssText = '';
+  if (highContrastInput.checked) {
+    chunk.style.cssText = 'background-color: #1b1b2a; color: #fff;';
+    return;
+  }
+  if (style !== 'underline') chunk.style.backgroundColor = color;
+  if (style !== 'background') {
+    chunk.style.textDecoration = `underline 3px color-mix(in srgb, ${color} 55%, #000)`;
+    chunk.style.textUnderlineOffset = '3px';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -414,6 +475,9 @@ async function saveSettings(): Promise<void> {
     defaultVoice,
     selectedModel,
     speed: Number(speedInput.value),
+    highlightColor: highlightColorInput.value,
+    highlightStyle: highlightStyleSelect.value as HighlightStyle,
+    highContrast: highContrastInput.checked,
   });
 
   saveMsg.textContent = 'Settings saved!';
@@ -441,6 +505,14 @@ btnTestSound.addEventListener('click', testSound);
 speedInput.addEventListener('input', () => {
   speedValue.textContent = formatSpeed(Number(speedInput.value));
 });
+renderSwatches();
+highlightColorInput.addEventListener('input', () => {
+  syncSwatches();
+  updatePreview();
+});
+for (const input of [highlightStyleSelect, highContrastInput]) {
+  input.addEventListener('input', updatePreview);
+}
 
 // Re-filter the default-voice list when the language/gender preselectors change
 languageFilter.addEventListener('change', applyVoiceFilter);

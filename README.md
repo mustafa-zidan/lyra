@@ -148,6 +148,8 @@ pnpm run build:ts
 - In the popup: **Read selection** or **Read page** (the article, extracted with Readability).
 - **Speed** (popup and settings, 0.5× – 2×) applies from the next passage, so you can change it
   mid-read.
+- **Highlight** (settings): the passage colour (presets or a custom colour), background,
+  underline or both, and a high-contrast mode.
 
 ---
 
