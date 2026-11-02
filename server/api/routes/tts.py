@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """TTS generation endpoint."""
 
+import json
 import logging
 from typing import Any
 
@@ -22,7 +23,7 @@ _VALID_FORMATS = {"wav"}
     description=(
         "Converts the supplied text to speech and returns a WAV audio file. "
         "Custom response headers carry metadata: ``X-Audio-Duration``, ``X-Cached``, ``X-Voice``, "
-        "``X-Model``, ``X-Language``."
+        "``X-Model``, ``X-Language``, ``X-Word-Timings``."
     ),
     response_class=Response,
     responses={
@@ -51,6 +52,15 @@ _VALID_FORMATS = {"wav"}
                 },
                 "X-Language": {
                     "description": "Language the text was read as (e.g. 'Japanese').",
+                    "schema": {"type": "string"},
+                },
+                "X-Word-Timings": {
+                    "description": (
+                        "JSON array of [start, end, start_s, end_s] per spoken word: the "
+                        "word's [start, end) in the request text, in UTF-16 code units, and "
+                        "when it is spoken, in seconds. Kokoro's timestamps for English, "
+                        "estimated from each segment's length for other languages."
+                    ),
                     "schema": {"type": "string"},
                 },
             },
@@ -99,6 +109,7 @@ async def generate(body: TTSRequest, request: Request) -> Response:
             "X-Voice": audio.voice,
             "X-Model": audio.model,
             "X-Language": audio.language,
+            "X-Word-Timings": json.dumps(audio.words, separators=(",", ":")),
             "Cache-Control": "no-store",
         },
     )

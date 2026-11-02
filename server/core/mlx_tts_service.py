@@ -114,6 +114,11 @@ if _MLX_AVAILABLE:
 # ---------------------------------------------------------------------------
 
 
+# (start, end, start_s, end_s): a word's [start, end) in the request text, in UTF-16 code
+# units (the browser's string offsets), and when it is spoken, in seconds into the audio.
+WordTiming = tuple[int, int, float, float]
+
+
 @dataclass
 class AudioResult:
     audio_data: bytes
@@ -122,6 +127,7 @@ class AudioResult:
     voice: str = ""
     language: str = ""
     model: str = ""
+    words: list[WordTiming] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -401,6 +407,80 @@ def _pick_voice(spec: ModelSpec, voice: str, language: str | None, default: str)
     return native[0] if native else spec.voices[0].id
 
 
+# Words for timing: each Han/kana character on its own (no spaces in Chinese/Japanese), else
+# runs of letters, digits and combining marks (Devanagari vowel signs are marks, not letters).
+_TIMING_WORD_RE = re.compile(
+    r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]"
+    r"|(?:(?![\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff])[^\W_]|[\u0900-\u097f\u0300-\u036f])+"
+)
+# Pieces of one written word that the G2P splits into tokens: "serpent's", "well-known".
+_JOINER_RE = re.compile(r"['’\-‐]")
+# A token is looked for at most this many characters past the previous one, so a token the
+# G2P rewrote can't make the alignment jump far ahead.
+_MAX_WORD_GAP = 80
+
+
+@dataclass
+class _Segment:
+    """One piece of audio the Kokoro pipeline produced, for word timing."""
+
+    graphemes: str
+    # English: misaki tokens with ``text``, ``start_ts`` and ``end_ts`` (seconds into the
+    # segment). Other languages: None, and timings are estimated from the duration.
+    tokens: list[Any] | None
+    offset: float  # seconds into the whole audio where the segment starts
+    duration: float
+
+
+def _word_timings(text: str, segments: list[_Segment]) -> list[WordTiming]:
+    """When each word of ``text`` is spoken, from the pipeline's segments.
+
+    English segments carry Kokoro's per-token timestamps. For the rest, each segment's
+    duration is shared out over its words in proportion to their length, which is close
+    enough for a highlight. Words are matched to ``text`` in order; one that can't be found
+    nearby (the G2P rewrote it) is skipped.
+    """
+    timings: list[tuple[int, int, float, float]] = []
+    cursor = 0
+
+    def place(word: str, start_s: float, end_s: float) -> None:
+        nonlocal cursor
+        at = text.find(word, cursor, cursor + _MAX_WORD_GAP + len(word))
+        if at == -1:
+            return
+        if timings and _JOINER_RE.fullmatch(text[timings[-1][1] : at]):
+            # "serpent" + "'s", "well" + "known": one word on the page, one highlight.
+            start, _, t0, _ = timings.pop()
+            timings.append((start, at + len(word), t0, round(end_s, 3)))
+        else:
+            timings.append((at, at + len(word), round(start_s, 3), round(end_s, 3)))
+        cursor = at + len(word)
+
+    for seg in segments:
+        if seg.tokens is not None:
+            for token in seg.tokens:
+                if token.start_ts is None or token.end_ts is None:
+                    continue
+                for m in _TIMING_WORD_RE.finditer(token.text):
+                    place(m.group(), seg.offset + token.start_ts, seg.offset + token.end_ts)
+            continue
+        words = [m.group() for m in _TIMING_WORD_RE.finditer(seg.graphemes)]
+        total = sum(len(w) + 1 for w in words)
+        t = seg.offset
+        for w in words:
+            step = seg.duration * (len(w) + 1) / total
+            place(w, t, t + step)
+            t += step
+
+    if any(ord(c) > 0xFFFF for c in text):
+        # Astral characters (emoji, rare CJK) are two UTF-16 code units in the browser.
+        utf16 = [0]
+        for c in text:
+            utf16.append(utf16[-1] + (2 if ord(c) > 0xFFFF else 1))
+        timings = [(utf16[a], utf16[b], t0, t1) for a, b, t0, t1 in timings]
+    return timings
+
+
 def _array_to_wav(audio: np.ndarray, sample_rate: int) -> bytes:
     """Convert a float32 numpy array to WAV bytes (standard-library only)."""
     audio = np.clip(audio, -1.0, 1.0)
@@ -584,7 +664,7 @@ class MLXTTSService:
             lang = next(entry.language for entry in spec.voices if entry.id == v)
 
         loop = asyncio.get_event_loop()
-        wav_bytes, duration = await loop.run_in_executor(
+        wav_bytes, duration, words = await loop.run_in_executor(
             self._executor, self._generate_sync, text, v, mid, lang, speed
         )
         return AudioResult(
@@ -593,6 +673,7 @@ class MLXTTSService:
             voice=v,
             language=LANGUAGE_LABELS[lang],
             model=mid,
+            words=words,
         )
 
     # ------------------------------------------------------------------
@@ -616,15 +697,23 @@ class MLXTTSService:
         model_id: str,
         language: str,
         speed: float = 1.0,
-    ) -> tuple[bytes, float]:
+    ) -> tuple[bytes, float, list[WordTiming]]:
         model = self._load_model(model_id)
         spec = MODELS[model_id]
         sample_rate = int(getattr(model, "sample_rate", 24000))
 
         chunks: list[np.ndarray] = []
+        segments: list[_Segment] = []
+        offset = 0.0
         try:
             for result in self._run_kokoro(model, spec, model_id, text, voice, language, speed):
-                chunks.append(np.array(result.audio))
+                if result.audio is None:
+                    continue
+                audio = np.array(result.audio[0])
+                chunks.append(audio)
+                length = len(audio) / sample_rate
+                segments.append(_Segment(result.graphemes, result.tokens, offset, length))
+                offset += length
         except SystemExit as exc:
             # spaCy's auto-download calls `pip install` internally, which fails in uv
             # environments.  Fix: sync a platform extra (each one declares en-core-web-sm).
@@ -635,7 +724,7 @@ class MLXTTSService:
 
         audio = np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.float32)
         duration = float(len(audio)) / sample_rate
-        return _array_to_wav(audio, sample_rate), duration
+        return _array_to_wav(audio, sample_rate), duration, _word_timings(text, segments)
 
     def _run_kokoro(
         self,
@@ -647,17 +736,17 @@ class MLXTTSService:
         language: str,
         speed: float = 1.0,
     ) -> Any:
-        """Yield mlx-audio Kokoro results (each with ``.audio``)."""
+        """Yield Kokoro pipeline results (``.audio``, ``.graphemes``, ``.tokens``).
+
+        Runs the pipeline directly rather than through ``model.generate``, which keeps only
+        the audio and drops the per-token timestamps needed for word highlighting.
+        """
         voice_arg = voice
         if spec.pth_weights:
             # Converted voicepacks live next to the model, not in an HF repo.
             cache = self._settings.cache_dir / "models" / model_id.replace("/", "--")
             voice_arg = str(cache / "voices" / f"{voice}.safetensors")
-        kwargs: dict[str, Any] = {
-            "voice": voice_arg,
-            "lang_code": _KOKORO_LANG_CODE[language],
-            "speed": speed,
-        }
-        if language not in _ENGLISH:
-            kwargs["split_pattern"] = _KOKORO_SPLIT_PATTERN
-        yield from model.generate(text, **kwargs)
+        pipeline = model._get_pipeline(_KOKORO_LANG_CODE[language])
+        pipeline.voices = {}  # as model.generate does: reload the voicepack per call
+        split = r"\n+" if language in _ENGLISH else _KOKORO_SPLIT_PATTERN
+        yield from pipeline(text, voice=voice_arg, speed=speed, split_pattern=split)

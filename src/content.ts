@@ -88,6 +88,9 @@
     highContrast: boolean;
     /** Alt+click a paragraph to read from there to the end. */
     clickToRead: boolean;
+    /** Highlight the spoken word, and narrow the passage highlight to its sentence. */
+    wordHighlight: boolean;
+    wordColor: string;
   }
 
   const display: DisplaySettings = {
@@ -95,6 +98,8 @@
     highlightStyle: 'background',
     highContrast: false,
     clickToRead: true,
+    wordHighlight: true,
+    wordColor: '#ffd84d',
   };
 
   /** Only #rrggbb from storage goes into the stylesheet. */
@@ -120,8 +125,11 @@
       document.head.appendChild(style);
     }
     const chunk = highlightCss();
+    // The spoken word: a strong colour with dark text, readable on any passage style.
+    const word = `background-color: ${safeColor(display.wordColor, '#ffd84d')}; color: #000000;`;
     style.textContent = `
       ::highlight(lyra-reading) { ${chunk} }
+      ::highlight(lyra-word) { ${word} }
       .lyra-reading-mark { ${chunk} color: inherit; border-radius: 3px; }
     `;
   }
@@ -214,18 +222,36 @@
    * Uses the CSS Custom Highlight API when available; falls back to wrapping
    * matching text nodes in <mark> elements.
    */
-  function highlightChunk(chunkText: string): void {
+  function highlightChunk(chunkText: string): [number, number] | null {
     clearHighlight();
-    if (!chunkText || textIndex.length === 0) return;
+    if (!chunkText || textIndex.length === 0) return null;
 
     const span = findExact(chunkText) ?? findFuzzy(chunkText);
-    if (!span) return;
-    const [start, end] = span;
+    if (!span) return null;
+    const range = buildRange(span[0], span[1]);
+    if (!range) return null;
 
-    const range = buildRange(start, end);
-    if (!range) return;
+    scrollIntoViewIfNeeded(range);
+    if (hasCSSHighlight) {
+      setHighlight('lyra-reading', range);
+    } else {
+      applyMarkFallback(range);
+    }
+    return span;
+  }
 
-    // Scroll the highlighted range into view
+  type HighlightRegistry = {
+    set(name: string, h: Highlight): void;
+    delete(name: string): void;
+  };
+
+  function setHighlight(name: 'lyra-reading' | 'lyra-word', range: Range): void {
+    const highlight = new Highlight(range);
+    if (name === 'lyra-word') highlight.priority = 1; // paint over the sentence
+    (CSS as unknown as { highlights: HighlightRegistry }).highlights.set(name, highlight);
+  }
+
+  function scrollIntoViewIfNeeded(range: Range): void {
     const rect = range.getBoundingClientRect();
     if (rect.top < 0 || rect.bottom > window.innerHeight) {
       (range.startContainer as Element).parentElement?.scrollIntoView({
@@ -233,15 +259,121 @@
         block: 'center',
       });
     }
+  }
 
-    if (hasCSSHighlight) {
-      (CSS as { highlights: { set(name: string, h: Highlight): void } }).highlights.set(
-        'lyra-reading',
-        new Highlight(range),
-      );
-    } else {
-      applyMarkFallback(range);
+  // ---------------------------------------------------------------------------
+  // Word-by-word highlight (#3)
+  // ---------------------------------------------------------------------------
+
+  /** One spoken word: when (seconds into the chunk's audio) and where on the page. */
+  interface WordCue {
+    t0: number;
+    t1: number;
+    /** The word's [start, end) in fullText. */
+    word: [number, number];
+    /** Its sentence's [start, end) in fullText. */
+    sentence: [number, number];
+  }
+
+  /**
+   * Sentences of a chunk: up to a run of CJK/Devanagari sentence marks, or of Latin ones
+   * followed by a space (so "1.5" or "e.g" mid-word doesn't end one).
+   */
+  const SENTENCE_RE = /[^]+?(?:[.!?]+(?=\s|$)|[。！？｡।]+|$)/g;
+
+  /**
+   * Place the server's word timings (offsets into the chunk text) on the page, inside the
+   * chunk's page span. The chunk's words are aligned in order with the page's words there,
+   * so text that only one side has (a footnote marker) doesn't throw the rest off.
+   */
+  function buildWordCues(
+    chunkText: string,
+    span: [number, number],
+    timings: number[][],
+  ): WordCue[] {
+    if (timings.length === 0) return [];
+    const chunk = toWords(chunkText);
+    const first = lowerBound(pageWords, span[0], (w) => w.start);
+    const toPage = new Array<number>(chunk.length).fill(-1);
+    let j = first;
+    for (let i = 0; i < chunk.length; i++) {
+      for (let k = j; k < j + MAX_SKIP + 1 && k < pageWords.length; k++) {
+        if (pageWords[k].start >= span[1]) break;
+        const page = pageWords[k].text;
+        const w = chunk[i].text;
+        if (
+          page === w ||
+          (i === 0 && page.endsWith(w)) ||
+          (i === chunk.length - 1 && page.startsWith(w))
+        ) {
+          toPage[i] = k;
+          j = k + 1;
+          break;
+        }
+      }
     }
+
+    /** Page [start, end) of the chunk words overlapping chunk offsets [a, b), or null. */
+    const pageSpan = (a: number, b: number): [number, number] | null => {
+      let lo = -1;
+      let hi = -1;
+      for (let i = 0; i < chunk.length; i++) {
+        if (chunk[i].end <= a || chunk[i].start >= b || toPage[i] === -1) continue;
+        if (lo === -1) lo = toPage[i];
+        hi = toPage[i];
+      }
+      return lo === -1 ? null : [pageWords[lo].start, pageWords[hi].end];
+    };
+
+    const sentences = Array.from(chunkText.matchAll(SENTENCE_RE), (m) => [
+      m.index,
+      m.index + m[0].length,
+    ]);
+    const cues: WordCue[] = [];
+    for (const [a, b, t0, t1] of timings) {
+      const word = pageSpan(a, b);
+      if (!word) continue;
+      const s = sentences.find(([sa, sb]) => a >= sa && a < sb);
+      const inPage = s && pageSpan(s[0], s[1]);
+      const sentence = inPage ? withPunctuation(...inPage) : span;
+      cues.push({ t0, t1, word, sentence });
+    }
+    return cues;
+  }
+
+  /**
+   * Move the word (and sentence) highlight along with the audio until the chunk ends.
+   * The audio clock stops while paused, so the highlight does too.
+   */
+  function followWords(r: Reader, cues: WordCue[], source: AudioBufferSourceNode): void {
+    if (!hasCSSHighlight || cues.length === 0) return;
+    let shownWord = -1;
+    let shownSentence: [number, number] | null = null;
+    const tick = () => {
+      if (r.cancelled || r.source !== source || r.startedAt === null) return;
+      // currentTime runs ahead of what is heard by the output latency.
+      const t = r.ctx.currentTime - r.startedAt - (r.ctx.outputLatency || 0);
+      // The last word that has started; it stays lit through the pause after it.
+      let i = shownWord === -1 ? 0 : shownWord;
+      if (cues[i] && cues[i].t0 > t) i = 0;
+      while (i + 1 < cues.length && cues[i + 1].t0 <= t) i++;
+      if (i !== shownWord && cues[i].t0 <= t) {
+        shownWord = i;
+        const cue = cues[i];
+        const word = buildRange(cue.word[0], cue.word[1]);
+        if (word) setHighlight('lyra-word', word);
+        if (cue.sentence !== shownSentence) {
+          shownSentence = cue.sentence;
+          const sentence = buildRange(cue.sentence[0], cue.sentence[1]);
+          if (sentence) {
+            setHighlight('lyra-reading', sentence);
+            scrollIntoViewIfNeeded(sentence);
+          }
+        }
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
   }
 
   /**
@@ -274,15 +406,19 @@
     const words = findFuzzyWords(chunk, from) ?? findFuzzyWords(chunk, 0);
     if (!words) return null;
 
-    let start = pageWords[words[0]].start;
-    let end = pageWords[words[1]].end;
-    // Take in punctuation touching the span ("“Don’t", "died."), but not whitespace or
-    // letters: in Chinese or Japanese that would swallow the next sentence.
+    const [start, end] = withPunctuation(pageWords[words[0]].start, pageWords[words[1]].end);
+    matchCursor = lowerBound(normToOrig, end, (i) => i);
+    return [start, end];
+  }
+
+  /**
+   * Widen [start, end) of fullText over punctuation touching it ("“Don’t", "died."), but
+   * not whitespace or letters: in Chinese or Japanese that would swallow the next sentence.
+   */
+  function withPunctuation(start: number, end: number): [number, number] {
     const isPunct = (c: string) => /[^\s\p{L}\p{N}\p{M}]/u.test(c);
     while (start > 0 && isPunct(fullText[start - 1])) start--;
     while (end < fullText.length && isPunct(fullText[end])) end++;
-
-    matchCursor = lowerBound(normToOrig, end, (i) => i);
     return [start, end];
   }
 
@@ -420,7 +556,9 @@
   /** Remove all highlights applied by Lyra. */
   function clearHighlight(): void {
     if (hasCSSHighlight) {
-      (CSS as { highlights: { delete(name: string): void } }).highlights.delete('lyra-reading');
+      const { highlights } = CSS as unknown as { highlights: HighlightRegistry };
+      highlights.delete('lyra-reading');
+      highlights.delete('lyra-word');
     }
     // Also clean up any fallback marks
     for (const mark of document.querySelectorAll('mark.lyra-reading-mark')) {
@@ -642,6 +780,7 @@
     ok: boolean;
     audio?: string;
     label?: string;
+    words?: number[][];
     error?: string;
     cancelled?: boolean;
   }
@@ -650,6 +789,7 @@
   interface PreparedChunk {
     buffer: AudioBuffer | null;
     label?: string;
+    words?: number[][];
     error?: string;
     cancelled?: boolean;
   }
@@ -714,6 +854,8 @@
     if (r.ctx.state === 'suspended') r.ctx.resume().catch(() => {});
 
     buildTextIndex();
+    // The selection paints over the reading highlights; it has done its job by now.
+    window.getSelection()?.removeAllRanges();
     showStatusBar('Preparing…');
 
     const { chunks } = req;
@@ -762,8 +904,10 @@
           statusLabel = chunk!.label;
           showStatusBar(statusLabel);
         }
-        highlightChunk(chunks[i]);
-        await playBuffer(r, chunk!.buffer);
+        const span = highlightChunk(chunks[i]);
+        const cues =
+          span && display.wordHighlight ? buildWordCues(chunks[i], span, chunk!.words ?? []) : [];
+        await playBuffer(r, chunk!.buffer, cues);
         played++;
         if (r.cancelled) return;
         if (r.jumpTo !== null) {
@@ -855,14 +999,14 @@
 
     try {
       const buffer = await r.ctx.decodeAudioData(base64ToArrayBuffer(res.audio));
-      return { buffer, label: res.label };
+      return { buffer, label: res.label, words: res.words };
     } catch {
       return { buffer: null, cancelled: r.cancelled, error: 'Could not decode the audio' };
     }
   }
 
   /** Play a decoded chunk, resolving when it ends or the read is stopped. */
-  function playBuffer(r: Reader, buffer: AudioBuffer): Promise<void> {
+  function playBuffer(r: Reader, buffer: AudioBuffer, cues: WordCue[] = []): Promise<void> {
     return new Promise<void>((resolve) => {
       if (r.cancelled) return resolve();
       const source = r.ctx.createBufferSource();
@@ -878,6 +1022,7 @@
       source.onended = finish;
       source.start();
       r.startedAt = r.ctx.currentTime;
+      followWords(r, cues, source);
     });
   }
 

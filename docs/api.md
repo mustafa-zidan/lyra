@@ -145,6 +145,7 @@ voice that can. `language` tags no model speaks (e.g. `nl`, `th`) are ignored.
 | `X-Voice`          | Voice ID used for this response            |
 | `X-Model`          | Model ID actually used                     |
 | `X-Language`       | Language the text was read as              |
+| `X-Word-Timings`   | JSON `[[start, end, start_s, end_s], …]` per spoken word: its `[start, end)` in `text` (UTF-16 code units, as in JavaScript) and when it is spoken, in seconds. Kokoro's token timestamps for English; for other languages each segment's duration is shared out by word length |
 
 ### Response 400: Invalid voice or format
 

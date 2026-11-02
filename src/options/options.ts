@@ -43,6 +43,8 @@ const highlightColorInput = document.getElementById('highlight-color') as HTMLIn
 const highlightStyleSelect = document.getElementById('highlight-style') as HTMLSelectElement;
 const highContrastInput = document.getElementById('high-contrast') as HTMLInputElement;
 const preview = document.getElementById('highlight-preview') as HTMLElement;
+const wordHighlightInput = document.getElementById('word-highlight') as HTMLInputElement;
+const wordColorInput = document.getElementById('word-color') as HTMLInputElement;
 const clickToReadInput = document.getElementById('click-to-read') as HTMLInputElement;
 const shortcutList = document.getElementById('shortcuts') as HTMLElement;
 const btnShortcuts = document.getElementById('btn-shortcuts') as HTMLButtonElement;
@@ -290,6 +292,8 @@ function showReadingSettings(settings: Settings): void {
   highlightStyleSelect.value = settings.highlightStyle;
   highContrastInput.checked = settings.highContrast;
   clickToReadInput.checked = settings.clickToRead;
+  wordHighlightInput.checked = settings.wordHighlight;
+  wordColorInput.value = settings.wordColor;
   syncSwatches();
   updatePreview();
 }
@@ -331,7 +335,11 @@ function updatePreview(): void {
   const chunk = preview.querySelector('.preview__chunk') as HTMLElement;
   const color = highlightColorInput.value;
   const style = highlightStyleSelect.value as HighlightStyle;
+  const word = preview.querySelector('.preview__word') as HTMLElement;
   chunk.style.cssText = '';
+  word.style.cssText = wordHighlightInput.checked
+    ? `background-color: ${wordColorInput.value}; color: #000;`
+    : '';
   if (highContrastInput.checked) {
     chunk.style.cssText = 'background-color: #1b1b2a; color: #fff;';
     return;
@@ -524,6 +532,8 @@ async function saveSettings(): Promise<void> {
     highlightStyle: highlightStyleSelect.value as HighlightStyle,
     highContrast: highContrastInput.checked,
     clickToRead: clickToReadInput.checked,
+    wordHighlight: wordHighlightInput.checked,
+    wordColor: wordColorInput.value,
   });
 
   saveMsg.textContent = 'Settings saved!';
@@ -557,7 +567,7 @@ highlightColorInput.addEventListener('input', () => {
   syncSwatches();
   updatePreview();
 });
-for (const input of [highlightStyleSelect, highContrastInput]) {
+for (const input of [highlightStyleSelect, highContrastInput, wordHighlightInput, wordColorInput]) {
   input.addEventListener('input', updatePreview);
 }
 

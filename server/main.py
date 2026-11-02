@@ -63,7 +63,14 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
         allow_credentials=False,
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type", "Accept"],
-        expose_headers=["X-Audio-Duration", "X-Cached", "X-Voice", "X-Model", "X-Language"],
+        expose_headers=[
+            "X-Audio-Duration",
+            "X-Cached",
+            "X-Voice",
+            "X-Model",
+            "X-Language",
+            "X-Word-Timings",
+        ],
     )
 
     app.include_router(health.router)

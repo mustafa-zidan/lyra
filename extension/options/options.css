@@ -349,8 +349,15 @@ fieldset.field legend {
     line-height: 1.7;
 }
 
-.preview__chunk {
+.preview__chunk,
+.preview__word {
     border-radius: 3px;
+}
+
+.field__input--color {
+    height: 42px;
+    padding: 4px;
+    cursor: pointer;
 }
 
 /* Keyboard shortcuts */

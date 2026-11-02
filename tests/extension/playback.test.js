@@ -17,8 +17,8 @@ async function serviceWorker(context) {
   return sw ?? (await context.waitForEvent('serviceworker', { timeout: 10_000 }));
 }
 
-/** Open the playback fixture and start reading CHUNKS in it. */
-async function startRead(context, mockServerUrl) {
+/** Open the playback fixture and start reading `chunks` in it. */
+async function startRead(context, mockServerUrl, chunks = CHUNKS) {
   const url = `${mockServerUrl}/fixtures/playback-page.html`;
   const page = await context.newPage();
   await page.goto(url);
@@ -36,34 +36,43 @@ async function startRead(context, mockServerUrl) {
       { url, message },
     );
 
-  /** Text of the highlighted chunk, or null. */
-  const highlighted = () =>
-    sw.evaluate(async (url) => {
-      const [tab] = await chrome.tabs.query({ url });
-      const [{ result }] = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: () => {
-          const hl = CSS.highlights.get('lyra-reading');
-          const range = hl ? [...hl][0] : null;
-          return range ? range.toString().trim() : null;
-        },
-      });
-      return result;
-    }, url);
+  /** Text of a highlight (the chunk/sentence by default, or 'lyra-word'), or null. */
+  const highlighted = (name = 'lyra-reading') =>
+    sw.evaluate(
+      async ({ url, name }) => {
+        const [tab] = await chrome.tabs.query({ url });
+        const [{ result }] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          args: [name],
+          func: (name) => {
+            const hl = CSS.highlights.get(name);
+            const range = hl ? [...hl][0] : null;
+            return range ? range.toString().trim() : null;
+          },
+        });
+        return result;
+      },
+      { url, name },
+    );
 
   await send({
     action: 'start-reading',
     readId: `test-${Date.now()}`,
-    chunks: CHUNKS,
+    chunks,
     voice: 'af_heart',
     serverUrl: mockServerUrl,
     model: 'mlx-community/Kokoro-82M-bf16',
   });
-  await expect.poll(highlighted, { timeout: 10_000 }).toBe(CHUNKS[0]);
+  await expect.poll(highlighted, { timeout: 10_000 }).toMatch(/\S/);
   return { page, send, highlighted };
 }
 
 test.describe('Playback controls', () => {
+  test('first chunk is highlighted', async ({ context, mockServerUrl }) => {
+    const { highlighted } = await startRead(context, mockServerUrl);
+    expect(await highlighted()).toBe(CHUNKS[0]);
+  });
+
   test('the status bar pauses and resumes the read', async ({ context, mockServerUrl }) => {
     const { page, send, highlighted } = await startRead(context, mockServerUrl);
     const pause = page.locator('#__lyra-pause');
@@ -141,5 +150,38 @@ test.describe('Playback controls', () => {
         paused: true,
       });
     await expect(page.locator('#__lyra-pause')).toHaveAttribute('aria-label', 'Resume');
+  });
+});
+
+test.describe('Word-by-word highlight', () => {
+  // The mock spreads the 4 s evenly over the chunk's 13 words (marker included).
+  const CHUNK = 'Orpheus sang to the trees. The stones wept with him [4s].';
+
+  test('the spoken word and its sentence follow the audio', async ({ context, mockServerUrl }) => {
+    const { highlighted } = await startRead(context, mockServerUrl, [CHUNK]);
+    await expect.poll(() => highlighted('lyra-word'), { timeout: 2000 }).toBe('Orpheus');
+    // The page has a footnote marker the chunk doesn't; the sentence still lines up.
+    await expect.poll(() => highlighted(), { timeout: 2000 }).toBe('Orpheus sang1 to the trees.');
+    // Each word lasts ~0.3 s, too short to catch reliably: wait for any word of the
+    // second sentence, then check the sentence highlight moved with it.
+    await expect
+      .poll(() => highlighted('lyra-word'), { timeout: 3000 })
+      .toMatch(/^(The|stones|wept|with|him)$/);
+    expect(await highlighted()).toBe('The stones wept with him [4s].');
+  });
+
+  test('turning it off keeps the whole chunk highlighted', async ({
+    context,
+    extensionId,
+    mockServerUrl,
+  }) => {
+    const ext = await context.newPage();
+    await ext.goto(`chrome-extension://${extensionId}/options/options.html`);
+    await ext.evaluate(() => chrome.storage.local.set({ wordHighlight: false }));
+    await ext.close();
+    const { page, highlighted } = await startRead(context, mockServerUrl, [CHUNK]);
+    await page.waitForTimeout(2600);
+    expect(await highlighted('lyra-word')).toBeNull();
+    expect(await highlighted()).toBe('Orpheus sang1 to the trees. The stones wept with him [4s].');
   });
 });

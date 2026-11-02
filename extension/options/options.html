@@ -104,10 +104,15 @@
       <section class="card">
         <h2>Highlight</h2>
 
+        <label class="checkbox">
+          <input id="word-highlight" type="checkbox" checked />
+          Follow along word by word (highlights the sentence and the spoken word)
+        </label>
+
         <fieldset class="field">
           <legend class="field__label">
-            Passage colour
-            <span class="field__hint">The sentence or passage being read.</span>
+            Sentence colour
+            <span class="field__hint">The sentence (or passage) being read.</span>
           </legend>
           <div class="swatches" id="highlight-swatches">
             <label class="swatch swatch--custom" title="Custom colour">
@@ -116,16 +121,25 @@
           </div>
         </fieldset>
 
-        <div class="field">
-          <label for="highlight-style" class="field__label">
-            Style
-            <span class="field__hint">How the passage is marked.</span>
-          </label>
-          <select id="highlight-style" class="field__input">
-            <option value="background">Background</option>
-            <option value="underline">Underline</option>
-            <option value="both">Background and underline</option>
-          </select>
+        <div class="field-row">
+          <div class="field">
+            <label for="word-color" class="field__label">
+              Word colour
+              <span class="field__hint">The word being spoken.</span>
+            </label>
+            <input id="word-color" type="color" class="field__input field__input--color" value="#ffd84d" />
+          </div>
+          <div class="field">
+            <label for="highlight-style" class="field__label">
+              Style
+              <span class="field__hint">How the sentence is marked.</span>
+            </label>
+            <select id="highlight-style" class="field__input">
+              <option value="background">Background</option>
+              <option value="underline">Underline</option>
+              <option value="both">Background and underline</option>
+            </select>
+          </div>
         </div>
 
         <label class="checkbox">
@@ -135,7 +149,7 @@
 
         <p class="preview" id="highlight-preview" aria-label="Highlight preview">
           Orpheus went down to the underworld.
-          <span class="preview__chunk">He sang so sweetly that Hades wept,</span>
+          <span class="preview__chunk">He sang so sweetly that <span class="preview__word">Hades</span> wept,</span>
           and let Eurydice follow him home.
         </p>
       </section>
