@@ -163,6 +163,8 @@ pnpm run build:ts
 - **Follow along**: the sentence being read is highlighted, and the word being spoken on top of
   it. English uses Kokoro's word timestamps; other languages use an estimate from the audio
   length. Turn it off in the settings to highlight the whole passage instead.
+- **Focus mode**: dim everything but the line (ruler) or paragraph (spotlight) being read. Cycle it
+  with the button on the reading bar, or set it in the settings.
 - **Highlight** (settings): the sentence colour (presets or a custom colour) and the word colour, background,
   underline or both, and a high-contrast mode.
 

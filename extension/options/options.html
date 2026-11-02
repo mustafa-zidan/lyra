@@ -95,6 +95,18 @@
           <input id="speed" type="range" class="range" min="0.5" max="2" step="0.05" value="1" />
         </div>
 
+        <div class="field">
+          <label for="focus-mode" class="field__label">
+            Focus mode
+            <span class="field__hint">Helps keep your place. Also switchable from the button on the reading bar.</span>
+          </label>
+          <select id="focus-mode" class="field__input">
+            <option value="off">Off</option>
+            <option value="ruler">Ruler: dim all but the line being read</option>
+            <option value="spotlight">Spotlight: dim all but the paragraph being read</option>
+          </select>
+        </div>
+
         <label class="checkbox">
           <input id="click-to-read" type="checkbox" checked />
           Alt+click (Option+click on macOS) a paragraph to read from there

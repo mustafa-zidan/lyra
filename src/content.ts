@@ -91,7 +91,11 @@
     /** Highlight the spoken word, and narrow the passage highlight to its sentence. */
     wordHighlight: boolean;
     wordColor: string;
+    /** Reading aid: a ruler band on the current line, or dim all but the paragraph. */
+    focusMode: FocusMode;
   }
+
+  type FocusMode = 'off' | 'ruler' | 'spotlight';
 
   const display: DisplaySettings = {
     highlightColor: '#dcd7fc',
@@ -100,6 +104,7 @@
     clickToRead: true,
     wordHighlight: true,
     wordColor: '#ffd84d',
+    focusMode: 'off',
   };
 
   /** Only #rrggbb from storage goes into the stylesheet. */
@@ -235,8 +240,10 @@
     if (hasCSSHighlight) {
       setHighlight('lyra-reading', range);
     } else {
+      focusRange = range;
       applyMarkFallback(range);
     }
+    updateFocus();
     return span;
   }
 
@@ -246,6 +253,8 @@
   };
 
   function setHighlight(name: 'lyra-reading' | 'lyra-word', range: Range): void {
+    if (name === 'lyra-reading') focusRange = range;
+    else focusWord = range;
     const highlight = new Highlight(range);
     if (name === 'lyra-word') highlight.priority = 1; // paint over the sentence
     (CSS as unknown as { highlights: HighlightRegistry }).highlights.set(name, highlight);
@@ -555,6 +564,8 @@
 
   /** Remove all highlights applied by Lyra. */
   function clearHighlight(): void {
+    focusRange = null;
+    focusWord = null;
     if (hasCSSHighlight) {
       const { highlights } = CSS as unknown as { highlights: HighlightRegistry };
       highlights.delete('lyra-reading');
@@ -566,6 +577,115 @@
       while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
       parent.removeChild(mark);
     }
+    updateFocus();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Focus mode (#9): a ruler on the line being read, or a spotlight on its paragraph
+  // ---------------------------------------------------------------------------
+
+  /** Elements that make up one block of reading text. */
+  const BLOCK_SELECTOR =
+    'p, li, h1, h2, h3, h4, h5, h6, blockquote, dd, dt, td, th, pre, figcaption, summary';
+
+  /** The sentence (or chunk) and word being read; the focus overlay follows them. */
+  let focusRange: Range | null = null;
+  let focusWord: Range | null = null;
+  let focusOverlay: HTMLDivElement | null = null;
+  let focusFrame = 0;
+
+  const DIM = 'rgba(20, 20, 32, 0.55)';
+
+  /**
+   * The overlay: a box with a huge shadow, so everything around it is dimmed. For the
+   * ruler the box spans the viewport's width on the current line; for the spotlight it
+   * fits the paragraph being read. It never takes clicks.
+   */
+  function getFocusOverlay(): HTMLDivElement {
+    if (focusOverlay) return focusOverlay;
+    focusOverlay = document.createElement('div');
+    focusOverlay.id = '__lyra-focus';
+    focusOverlay.setAttribute('aria-hidden', 'true');
+    Object.assign(focusOverlay.style, {
+      position: 'fixed',
+      zIndex: '2147483646', // just under the status bar
+      pointerEvents: 'none',
+      boxShadow: `0 0 0 200vmax ${DIM}`,
+      borderRadius: '6px',
+      transition: 'top 0.12s ease, left 0.12s ease, width 0.12s ease, height 0.12s ease',
+      display: 'none',
+    });
+    document.body.appendChild(focusOverlay);
+    return focusOverlay;
+  }
+
+  /** Viewport rect the overlay should leave clear, or null to hide it. */
+  function focusRect(): { top: number; left: number; width: number; height: number } | null {
+    if (!focusRange || display.focusMode === 'off') return null;
+    if (display.focusMode === 'ruler') {
+      // The line of the word being spoken, else the first line of the sentence.
+      const line = (focusWord ?? focusRange).getClientRects()[0];
+      if (!line) return null;
+      const pad = Math.max(4, line.height * 0.3);
+      return {
+        top: line.top - pad,
+        left: -10,
+        width: window.innerWidth + 20,
+        height: line.height + 2 * pad,
+      };
+    }
+    // Spotlight: the paragraph holding the sentence, grown to fit a sentence that spans
+    // paragraphs.
+    const start = focusRange.startContainer;
+    const block = (start instanceof Element ? start : start.parentElement)?.closest(BLOCK_SELECTOR);
+    const rects = [focusRange.getBoundingClientRect()];
+    if (block) rects.push(block.getBoundingClientRect());
+    const top = Math.min(...rects.map((r) => r.top));
+    const left = Math.min(...rects.map((r) => r.left));
+    const bottom = Math.max(...rects.map((r) => r.bottom));
+    const right = Math.max(...rects.map((r) => r.right));
+    const pad = 10;
+    return {
+      top: top - pad,
+      left: left - pad,
+      width: right - left + 2 * pad,
+      height: bottom - top + 2 * pad,
+    };
+  }
+
+  /** Keep the overlay on the current line/paragraph, through scrolling and reflow. */
+  function updateFocus(): void {
+    cancelAnimationFrame(focusFrame);
+    const rect = focusRect();
+    if (!rect) {
+      if (focusOverlay) focusOverlay.style.display = 'none';
+      return;
+    }
+    const overlay = getFocusOverlay();
+    Object.assign(overlay.style, {
+      display: 'block',
+      top: `${rect.top}px`,
+      left: `${rect.left}px`,
+      width: `${rect.width}px`,
+      height: `${rect.height}px`,
+    });
+    focusFrame = requestAnimationFrame(updateFocus);
+  }
+
+  const FOCUS_MODES: FocusMode[] = ['off', 'ruler', 'spotlight'];
+  const FOCUS_LABELS: Record<FocusMode, string> = {
+    off: 'Focus: off',
+    ruler: 'Focus: ruler',
+    spotlight: 'Focus: spotlight',
+  };
+
+  /** Status-bar button: off → ruler → spotlight → off, saved for later reads. */
+  function cycleFocusMode(): void {
+    const next = FOCUS_MODES[(FOCUS_MODES.indexOf(display.focusMode) + 1) % FOCUS_MODES.length];
+    display.focusMode = next;
+    api.storage.local.set({ focusMode: next }).catch(() => {});
+    updateControls();
+    updateFocus();
   }
 
   // ---------------------------------------------------------------------------
@@ -576,12 +696,15 @@
   /** Back / pause / forward buttons, shown only while a read is running. */
   let controls: HTMLDivElement | null = null;
   let pauseBtn: HTMLButtonElement | null = null;
+  let focusBtn: HTMLButtonElement | null = null;
 
   const ICONS = {
     back: '<path d="M6 5h2v14H6zM20 5v14L9.5 12z"/>',
     forward: '<path d="M16 5h2v14h-2zM4 5v14l10.5-7z"/>',
     pause: '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>',
     play: '<path d="M7 4v16l13-8z"/>',
+    focus:
+      '<path d="M3 9h18v6H3z" opacity=".35"/><path d="M3 4h18v2H3zM3 18h18v2H3zM3 10h18v4H3z"/>',
   };
 
   /** A square icon button for the status bar. */
@@ -680,7 +803,9 @@
     backBtn.id = '__lyra-back';
     const forwardBtn = iconButton('forward', 'Forward one passage', () => skip(1));
     forwardBtn.id = '__lyra-forward';
-    controls.append(backBtn, pauseBtn, forwardBtn);
+    focusBtn = iconButton('focus', FOCUS_LABELS[display.focusMode], cycleFocusMode);
+    focusBtn.id = '__lyra-focus-btn';
+    controls.append(backBtn, pauseBtn, forwardBtn, focusBtn);
 
     const stopBtn = document.createElement('button');
     stopBtn.id = '__lyra-stop';
@@ -716,6 +841,11 @@
     controls.style.display = reader ? 'flex' : 'none';
     const paused = reader?.paused ?? false;
     setIcon(pauseBtn, paused ? 'play' : 'pause', paused ? 'Resume' : 'Pause');
+    if (focusBtn) {
+      setIcon(focusBtn, 'focus', FOCUS_LABELS[display.focusMode]);
+      focusBtn.setAttribute('aria-pressed', String(display.focusMode !== 'off'));
+      focusBtn.style.background = display.focusMode === 'off' ? '#f7f7fb' : '#e2dffc';
+    }
   }
 
   function showStatusBar(text: string): void {
@@ -749,6 +879,8 @@
         (display as unknown as Record<string, unknown>)[key] = values[key];
     }
     injectHighlightStyle();
+    updateControls();
+    updateFocus();
   }
   api.storage.local
     .get(Object.keys(display))
@@ -1199,10 +1331,6 @@
   // ---------------------------------------------------------------------------
   // Read from here (context menu, or Alt+click a paragraph)
   // ---------------------------------------------------------------------------
-
-  /** Elements that make up one block of reading text. */
-  const BLOCK_SELECTOR =
-    'p, li, h1, h2, h3, h4, h5, h6, blockquote, dd, dt, td, th, pre, figcaption, summary';
 
   /** Where the context menu was last opened, for "Read from here". */
   let contextTarget: Element | null = null;

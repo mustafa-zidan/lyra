@@ -9,13 +9,18 @@
 
 Accessibility issues (#3–#11), in dependency order:
 
-- [ ] #9 Focus mode: ruler / spotlight following the highlight, toggled from the status bar
 - [ ] #11 Alt+click a word to hear it again, slower
 - [ ] #10 Reader view overlay with dyslexia-friendly fonts and spacing
 
 ## Backlog
 
 ## Done
+
+- [x] Focus mode (#9). A fixed, click-through overlay (`#__lyra-focus`) whose huge box-shadow dims the rest of
+  the page. Ruler: a full-width band on the line of the spoken word (else the sentence's first line).
+  Spotlight: the paragraph holding the sentence. An rAF loop keeps it on the highlight through scrolling and
+  reflow. Status-bar button cycles off → ruler → spotlight and saves the choice (`focusMode`); also a select in
+  the options page. Hidden when the read ends or is stopped. Verified: 2 new Playwright tests.
 
 - [x] Word-by-word highlight (#3). Server: `_run_kokoro` runs the Kokoro pipeline directly (model.generate
   drops the tokens) and `_word_timings` turns each segment into `[start, end, t0, t1]` per word: misaki
