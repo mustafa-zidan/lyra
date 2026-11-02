@@ -185,3 +185,59 @@ test.describe('Word-by-word highlight', () => {
     expect(await highlighted()).toBe('Orpheus sang1 to the trees. The stones wept with him [4s].');
   });
 });
+
+test.describe('Focus mode', () => {
+  const CHUNK = 'Orpheus sang to the trees. The stones wept with him [4s].';
+
+  /** The overlay's clear box and the #five paragraph's box, in viewport pixels. */
+  const boxes = (page) =>
+    page.evaluate(() => {
+      const overlay = document.getElementById('__lyra-focus');
+      const para = document.getElementById('five').getBoundingClientRect();
+      if (!overlay || overlay.style.display === 'none') return null;
+      const o = overlay.getBoundingClientRect();
+      return { o: { top: o.top, bottom: o.bottom, width: o.width }, para };
+    });
+
+  test('the ruler sits on the line being read', async ({ context, extensionId, mockServerUrl }) => {
+    const ext = await context.newPage();
+    await ext.goto(`chrome-extension://${extensionId}/options/options.html`);
+    await ext.evaluate(() => chrome.storage.local.set({ focusMode: 'ruler' }));
+    await ext.close();
+    const { page } = await startRead(context, mockServerUrl, [CHUNK]);
+    await expect.poll(() => boxes(page)).not.toBeNull();
+    const { o, para } = await boxes(page);
+    expect(o.top).toBeLessThanOrEqual(para.top);
+    expect(o.bottom).toBeGreaterThanOrEqual(para.top + 10);
+    expect(o.bottom - o.top).toBeLessThan(60); // one line, not the paragraph
+    expect(o.width).toBeGreaterThanOrEqual(page.viewportSize().width);
+  });
+
+  test('the status bar button cycles focus modes and remembers the choice', async ({
+    context,
+    extensionId,
+    mockServerUrl,
+  }) => {
+    const ext = await context.newPage();
+    await ext.goto(`chrome-extension://${extensionId}/options/options.html`);
+    await ext.evaluate(() => chrome.storage.local.set({ focusMode: 'off' }));
+    const { page } = await startRead(context, mockServerUrl, [CHUNK]);
+    const button = page.locator('#__lyra-focus-btn');
+    await expect(button).toHaveAttribute('aria-label', 'Focus: off');
+    expect(await boxes(page)).toBeNull();
+
+    await button.click();
+    await expect(button).toHaveAttribute('aria-label', 'Focus: ruler');
+    await button.click();
+    await expect(button).toHaveAttribute('aria-label', 'Focus: spotlight');
+    const { o, para } = await boxes(page);
+    expect(o.top).toBeLessThan(para.top);
+    expect(o.bottom).toBeGreaterThan(para.bottom);
+    expect(await ext.evaluate(() => chrome.storage.local.get('focusMode'))).toEqual({
+      focusMode: 'spotlight',
+    });
+
+    await page.locator('#__lyra-stop').click();
+    await expect.poll(() => boxes(page)).toBeNull();
+  });
+});

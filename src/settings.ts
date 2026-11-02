@@ -7,6 +7,7 @@
  */
 
 export type HighlightStyle = 'background' | 'underline' | 'both';
+export type FocusMode = 'off' | 'ruler' | 'spotlight';
 
 export interface Settings {
   serverUrl: string;
@@ -25,6 +26,8 @@ export interface Settings {
   wordHighlight: boolean;
   /** Colour of the word being spoken. */
   wordColor: string;
+  /** Reading aid: a ruler band on the current line, or dim all but the paragraph. */
+  focusMode: FocusMode;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -38,6 +41,7 @@ export const DEFAULT_SETTINGS: Settings = {
   clickToRead: true,
   wordHighlight: true,
   wordColor: '#ffd84d',
+  focusMode: 'off',
 };
 
 /** Slowest and fastest speed the popup and options offer (the server accepts 0.5–2). */

@@ -8,6 +8,7 @@ import {
   getSettings,
   HIGHLIGHT_PRESETS,
   saveSettings as save,
+  type FocusMode,
   type HighlightStyle,
   type Settings,
 } from '../settings.js';
@@ -45,6 +46,7 @@ const highContrastInput = document.getElementById('high-contrast') as HTMLInputE
 const preview = document.getElementById('highlight-preview') as HTMLElement;
 const wordHighlightInput = document.getElementById('word-highlight') as HTMLInputElement;
 const wordColorInput = document.getElementById('word-color') as HTMLInputElement;
+const focusModeSelect = document.getElementById('focus-mode') as HTMLSelectElement;
 const clickToReadInput = document.getElementById('click-to-read') as HTMLInputElement;
 const shortcutList = document.getElementById('shortcuts') as HTMLElement;
 const btnShortcuts = document.getElementById('btn-shortcuts') as HTMLButtonElement;
@@ -292,6 +294,7 @@ function showReadingSettings(settings: Settings): void {
   highlightStyleSelect.value = settings.highlightStyle;
   highContrastInput.checked = settings.highContrast;
   clickToReadInput.checked = settings.clickToRead;
+  focusModeSelect.value = settings.focusMode;
   wordHighlightInput.checked = settings.wordHighlight;
   wordColorInput.value = settings.wordColor;
   syncSwatches();
@@ -532,6 +535,7 @@ async function saveSettings(): Promise<void> {
     highlightStyle: highlightStyleSelect.value as HighlightStyle,
     highContrast: highContrastInput.checked,
     clickToRead: clickToReadInput.checked,
+    focusMode: focusModeSelect.value as FocusMode,
     wordHighlight: wordHighlightInput.checked,
     wordColor: wordColorInput.value,
   });
