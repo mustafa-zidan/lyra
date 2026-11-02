@@ -43,6 +43,7 @@ const highlightColorInput = document.getElementById('highlight-color') as HTMLIn
 const highlightStyleSelect = document.getElementById('highlight-style') as HTMLSelectElement;
 const highContrastInput = document.getElementById('high-contrast') as HTMLInputElement;
 const preview = document.getElementById('highlight-preview') as HTMLElement;
+const clickToReadInput = document.getElementById('click-to-read') as HTMLInputElement;
 const shortcutList = document.getElementById('shortcuts') as HTMLElement;
 const btnShortcuts = document.getElementById('btn-shortcuts') as HTMLButtonElement;
 
@@ -288,6 +289,7 @@ function showReadingSettings(settings: Settings): void {
   highlightColorInput.value = settings.highlightColor;
   highlightStyleSelect.value = settings.highlightStyle;
   highContrastInput.checked = settings.highContrast;
+  clickToReadInput.checked = settings.clickToRead;
   syncSwatches();
   updatePreview();
 }
@@ -521,6 +523,7 @@ async function saveSettings(): Promise<void> {
     highlightColor: highlightColorInput.value,
     highlightStyle: highlightStyleSelect.value as HighlightStyle,
     highContrast: highContrastInput.checked,
+    clickToRead: clickToReadInput.checked,
   });
 
   saveMsg.textContent = 'Settings saved!';

@@ -29,6 +29,7 @@ const api: typeof chrome | null =
 
 const DEFAULT_SERVER_URL = DEFAULT_SETTINGS.serverUrl;
 const CONTEXT_MENU_ID = 'lyra-read-selection';
+const READ_FROM_HERE_MENU_ID = 'lyra-read-from-here';
 /** The first chunk is kept short so reading starts quickly. */
 const FIRST_CHUNK_MAX = 180;
 /** Later chunks are generated while the previous one plays, so they can be longer. */
@@ -73,6 +74,7 @@ interface ExtMessage {
   action:
     | 'speak'
     | 'read-page'
+    | 'read-from-here'
     | 'stop'
     | 'command'
     | 'generate'
@@ -87,6 +89,8 @@ interface ExtMessage {
   serverUrl?: string;
   /** BCP-47 language of the text's page/element, used by the server to pick G2P + voice. */
   language?: string;
+  /** For `read-from-here`: the clicked block's text, to find it in the article. */
+  anchor?: string;
   /** For `generate`: the read the chunk belongs to. */
   readId?: string;
 }
@@ -116,9 +120,21 @@ if (api) {
       title: 'Read selection aloud with Lyra',
       contexts: ['selection'],
     });
+    api!.contextMenus.create({
+      id: READ_FROM_HERE_MENU_ID,
+      title: 'Read aloud from here',
+      contexts: ['page'],
+    });
   });
 
   api.contextMenus.onClicked.addListener(async (info, tab) => {
+    if (info.menuItemId === READ_FROM_HERE_MENU_ID && tab?.id) {
+      const here = (await api!.tabs
+        .sendMessage(tab.id, { action: 'get-text-from-here' })
+        .catch(() => null)) as TextFromHere | null;
+      if (here) await readFromHere(tab.id, here);
+      return;
+    }
     if (info.menuItemId !== CONTEXT_MENU_ID) return;
     const text = info.selectionText?.trim();
     if (!text || !tab?.id) return;
@@ -177,6 +193,17 @@ async function handleMessage(
     const tabId = await getActiveTabId();
     if (!tabId) return { ok: false, error: 'No active tab' };
     return readPage(tabId, message.voice);
+  }
+
+  if (action === 'read-from-here') {
+    const tabId = sender.tab?.id;
+    if (tabId === undefined || !message.text) return { ok: false, error: 'No text provided' };
+    await readFromHere(tabId, {
+      anchor: message.anchor ?? '',
+      text: message.text,
+      language: message.language,
+    });
+    return { ok: true };
   }
 
   if (action === 'stop') {
@@ -267,6 +294,44 @@ async function readPage(tabId: number, voice?: string): Promise<Record<string, u
   const { serverUrl, defaultVoice, selectedModel } = await getSettings();
   await speakInTab(tabId, text, voice || defaultVoice, serverUrl, selectedModel, page?.language);
   return { ok: true };
+}
+
+/** A clicked point of a page, from the content script. */
+interface TextFromHere {
+  anchor: string;
+  /** The page's own text from the clicked block on, used if the article doesn't have it. */
+  text: string;
+  language?: string;
+}
+
+/**
+ * Read from a clicked block to the end of the article. Uses the Readability article
+ * (as Read page does) from the block on, so navigation and sidebars after it are left
+ * out; falls back to the page's own text when the block isn't in the article (or
+ * extraction fails).
+ */
+async function readFromHere(tabId: number, here: TextFromHere): Promise<void> {
+  let text = here.text;
+  let language = here.language;
+  const page = await extractPage(tabId).catch(() => null);
+  const at = page?.text ? findLoosely(page.text, here.anchor) : -1;
+  if (at !== -1) {
+    text = page!.text!.slice(at);
+    language ??= page!.language;
+  }
+  const { serverUrl, defaultVoice, selectedModel } = await getSettings();
+  await speakInTab(tabId, text, defaultVoice, serverUrl, selectedModel, language);
+}
+
+/**
+ * Index of `needle`'s first 12 words in `haystack`, ignoring how whitespace differs
+ * (Readability and innerText break lines differently), or -1.
+ */
+function findLoosely(haystack: string, needle: string): number {
+  const words = needle.trim().split(/\s+/).slice(0, 12);
+  if (!words[0]) return -1;
+  const pattern = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+');
+  return haystack.search(new RegExp(pattern));
 }
 
 async function extractPage(tabId: number): Promise<{ text?: string; language?: string } | null> {

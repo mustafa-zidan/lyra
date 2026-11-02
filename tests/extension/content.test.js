@@ -79,7 +79,9 @@ test.describe('Content script: reading a long page', () => {
     mockServerUrl,
   }) => {
     test.setTimeout(60_000);
-    await fetch(`${mockServerUrl}/__tts-log`, { method: 'DELETE' });
+    // Other test files use the mock server at the same time: keep only this read's texts.
+    const ours = (log) => log.filter((t) => /Paragraph \d+|List item|Orpheus sang/.test(t ?? ''));
+    const before = ours(await (await fetch(`${mockServerUrl}/__tts-log`)).json()).length;
     // Opening an extension page runs the fixture's init script, which points the
     // saved server URL at the mock server.
     const settings = await context.newPage();
@@ -126,7 +128,7 @@ test.describe('Content script: reading a long page', () => {
 
     await expect(page.locator('#__lyra-label')).toHaveText('Done.', { timeout: 45_000 });
 
-    const log = await (await fetch(`${mockServerUrl}/__tts-log`)).json();
+    const log = ours(await (await fetch(`${mockServerUrl}/__tts-log`)).json()).slice(before);
     expect(log.length).toBeGreaterThan(80);
     expect(log[0].length).toBeLessThanOrEqual(180); // short first chunk: quick start
     for (const text of log) expect(text.length).toBeLessThanOrEqual(450);
