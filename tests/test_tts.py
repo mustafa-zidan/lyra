@@ -72,3 +72,19 @@ def test_generate_cached_response(client: TestClient, mock_tts_service: MagicMoc
     response = client.post("/tts/generate", json={"text": "cached text"})
     assert response.status_code == 200
     assert response.headers["X-Cached"] == "true"
+
+
+def test_generate_passes_speed(client: TestClient, mock_tts_service: MagicMock) -> None:
+    response = client.post("/tts/generate", json={"text": "Hello!", "speed": 0.8})
+    assert response.status_code == 200
+    assert mock_tts_service.generate.call_args.kwargs["speed"] == 0.8
+
+
+def test_generate_default_speed_is_normal(client: TestClient, mock_tts_service: MagicMock) -> None:
+    client.post("/tts/generate", json={"text": "Hello!"})
+    assert mock_tts_service.generate.call_args.kwargs["speed"] == 1.0
+
+
+def test_generate_rejects_out_of_range_speed(client: TestClient) -> None:
+    assert client.post("/tts/generate", json={"text": "Hi", "speed": 0.2}).status_code == 422
+    assert client.post("/tts/generate", json={"text": "Hi", "speed": 3}).status_code == 422

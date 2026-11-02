@@ -70,7 +70,7 @@ def captured_generate(service: MLXTTSService, monkeypatch: pytest.MonkeyPatch) -
     """Replace model inference with a recorder of (model, voice, language) per call."""
     calls: list[tuple] = []
 
-    def fake_generate_sync(text, voice, model_id, language):
+    def fake_generate_sync(text, voice, model_id, language, speed=1.0):
         calls.append((model_id, voice, language))
         return b"", 0.0
 

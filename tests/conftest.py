@@ -59,6 +59,7 @@ def mock_tts_service(settings_override: Settings) -> Iterator[MagicMock]:
         voice: str | None = None,
         model_id: str | None = None,
         language: str | None = None,
+        speed: float = 1.0,
     ):
         mid = model_id or settings_override.mlx_model
         v = voice or settings_override.mlx_default_voice

@@ -552,6 +552,7 @@ class MLXTTSService:
         voice: str | None = None,
         model_id: str | None = None,
         language: str | None = None,
+        speed: float = 1.0,
     ) -> AudioResult:
         """Synthesize ``text``; ``language`` is an optional BCP-47 hint (e.g. the page lang).
 
@@ -584,7 +585,7 @@ class MLXTTSService:
 
         loop = asyncio.get_event_loop()
         wav_bytes, duration = await loop.run_in_executor(
-            self._executor, self._generate_sync, text, v, mid, lang
+            self._executor, self._generate_sync, text, v, mid, lang, speed
         )
         return AudioResult(
             audio_data=wav_bytes,
@@ -614,6 +615,7 @@ class MLXTTSService:
         voice: str,
         model_id: str,
         language: str,
+        speed: float = 1.0,
     ) -> tuple[bytes, float]:
         model = self._load_model(model_id)
         spec = MODELS[model_id]
@@ -621,7 +623,7 @@ class MLXTTSService:
 
         chunks: list[np.ndarray] = []
         try:
-            for result in self._run_kokoro(model, spec, model_id, text, voice, language):
+            for result in self._run_kokoro(model, spec, model_id, text, voice, language, speed):
                 chunks.append(np.array(result.audio))
         except SystemExit as exc:
             # spaCy's auto-download calls `pip install` internally, which fails in uv
@@ -643,6 +645,7 @@ class MLXTTSService:
         text: str,
         voice: str,
         language: str,
+        speed: float = 1.0,
     ) -> Any:
         """Yield mlx-audio Kokoro results (each with ``.audio``)."""
         voice_arg = voice
@@ -650,7 +653,11 @@ class MLXTTSService:
             # Converted voicepacks live next to the model, not in an HF repo.
             cache = self._settings.cache_dir / "models" / model_id.replace("/", "--")
             voice_arg = str(cache / "voices" / f"{voice}.safetensors")
-        kwargs: dict[str, Any] = {"voice": voice_arg, "lang_code": _KOKORO_LANG_CODE[language]}
+        kwargs: dict[str, Any] = {
+            "voice": voice_arg,
+            "lang_code": _KOKORO_LANG_CODE[language],
+            "speed": speed,
+        }
         if language not in _ENGLISH:
             kwargs["split_pattern"] = _KOKORO_SPLIT_PATTERN
         yield from model.generate(text, **kwargs)

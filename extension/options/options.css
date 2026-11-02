@@ -263,3 +263,20 @@ select.field__input {
     background: #fff4f4;
     color: var(--danger);
 }
+
+/* Reading settings */
+.field__label-row {
+    display: flex;
+    justify-content: space-between;
+}
+
+.field__label-row output {
+    font-variant-numeric: tabular-nums;
+}
+
+.range {
+    width: 100%;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+

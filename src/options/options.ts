@@ -2,11 +2,19 @@
  * Lyra TTS: Options Page Script
  */
 
+import {
+  DEFAULT_SETTINGS,
+  formatSpeed,
+  getSettings,
+  saveSettings as save,
+  type Settings,
+} from '../settings.js';
+
 const api: typeof chrome = typeof browser !== 'undefined' ? browser : chrome;
 
-const DEFAULT_SERVER_URL = 'http://127.0.0.1:8000';
-const DEFAULT_VOICE = 'af_heart';
-const DEFAULT_MODEL = 'mlx-community/Kokoro-82M-bf16';
+const DEFAULT_SERVER_URL = DEFAULT_SETTINGS.serverUrl;
+const DEFAULT_VOICE = DEFAULT_SETTINGS.defaultVoice;
+const DEFAULT_MODEL = DEFAULT_SETTINGS.selectedModel;
 /** A Test sound taking longer than this is probably loading (or downloading) the model. */
 const SLOW_REQUEST_MS = 8000;
 
@@ -26,6 +34,8 @@ const btnTestSound = document.getElementById('btn-test-sound') as HTMLButtonElem
 const serverStatus = document.getElementById('server-status') as HTMLElement;
 const saveMsg = document.getElementById('save-msg') as HTMLElement;
 const testStatus = document.getElementById('test-status') as HTMLElement;
+const speedInput = document.getElementById('speed') as HTMLInputElement;
+const speedValue = document.getElementById('speed-value') as HTMLOutputElement;
 
 let testAudio: HTMLAudioElement | null = null;
 let testAudioUrl: string | null = null;
@@ -57,19 +67,15 @@ interface ModelInfo {
   default: boolean;
 }
 
-interface Settings {
-  serverUrl: string;
-  defaultVoice: string;
-  selectedModel: string;
-}
-
 // ---------------------------------------------------------------------------
 // Load saved settings
 // ---------------------------------------------------------------------------
 
 async function loadSettings(): Promise<void> {
-  const { serverUrl, defaultVoice, selectedModel } = await getSettings();
+  const settings = await getSettings();
+  const { serverUrl, defaultVoice, selectedModel } = settings;
   serverUrlInput.value = serverUrl;
+  showReadingSettings(settings);
 
   // Try to populate models and voices from the server
   try {
@@ -266,15 +272,10 @@ function setStatus(message: string, type: 'idle' | 'ok' | 'error'): void {
   serverStatus.className = `server-status server-status--${type}`;
 }
 
-async function getSettings(): Promise<Settings> {
-  return new Promise((resolve) => {
-    api.storage.local.get(
-      { serverUrl: DEFAULT_SERVER_URL, defaultVoice: DEFAULT_VOICE, selectedModel: DEFAULT_MODEL },
-      (items) => {
-        resolve(items as unknown as Settings);
-      },
-    );
-  });
+/** Fill the Reading card's controls from saved (or default) settings. */
+function showReadingSettings(settings: Settings): void {
+  speedInput.value = String(settings.speed);
+  speedValue.textContent = formatSpeed(settings.speed);
 }
 
 // ---------------------------------------------------------------------------
@@ -319,9 +320,11 @@ async function testSound(): Promise<void> {
   try {
     // Fetch TTS audio directly from the server
     const url = `${serverUrl}/tts/generate`;
-    const body: Record<string, string> = { text: testText };
+    const body: Record<string, string | number> = { text: testText };
     if (voice) body.voice = voice;
     if (model) body.model = model;
+    const speed = Number(speedInput.value);
+    if (speed !== 1) body.speed = speed;
 
     const response = await fetch(url, {
       method: 'POST',
@@ -406,8 +409,11 @@ async function saveSettings(): Promise<void> {
   const defaultVoice = defaultVoiceSelect.value || DEFAULT_VOICE;
   const selectedModel = modelSelect.value || DEFAULT_MODEL;
 
-  await new Promise<void>((resolve) => {
-    api.storage.local.set({ serverUrl, defaultVoice, selectedModel }, resolve);
+  await save({
+    serverUrl,
+    defaultVoice,
+    selectedModel,
+    speed: Number(speedInput.value),
   });
 
   saveMsg.textContent = 'Settings saved!';
@@ -420,6 +426,7 @@ function resetSettings(): void {
   serverUrlInput.value = DEFAULT_SERVER_URL;
   populateModels([], DEFAULT_MODEL);
   setVoices([], DEFAULT_VOICE);
+  showReadingSettings(DEFAULT_SETTINGS);
   setStatus('Reset to defaults. Click Save to apply.', 'idle');
 }
 
@@ -431,6 +438,9 @@ btnCheck.addEventListener('click', checkServer);
 btnSave.addEventListener('click', saveSettings);
 btnReset.addEventListener('click', resetSettings);
 btnTestSound.addEventListener('click', testSound);
+speedInput.addEventListener('input', () => {
+  speedValue.textContent = formatSpeed(Number(speedInput.value));
+});
 
 // Re-filter the default-voice list when the language/gender preselectors change
 languageFilter.addEventListener('change', applyVoiceFilter);

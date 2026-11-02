@@ -81,6 +81,7 @@ async def generate(body: TTSRequest, request: Request) -> Response:
             voice=body.voice,
             model_id=body.model,
             language=body.language,
+            speed=body.speed,
         )
     except ValueError as exc:
         # Bad request data (e.g. an unknown voice) — client error, not server error.

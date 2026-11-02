@@ -7,9 +7,28 @@
 
 ## To Do
 
+Accessibility issues (#3–#11), in dependency order:
+
+- [ ] #8 Highlight colour/style: presets + custom colour, background/underline/both, high contrast
+- [ ] #5 Pause/resume and back/forward a chunk in the status bar and popup
+- [ ] #6 Keyboard shortcuts (`commands`): read selection, read page, pause/resume, stop
+- [ ] #7 "Read from here" context-menu item and Alt+click a paragraph
+- [ ] #3 Word highlight: server returns word timings (`X-Word-Timings`, Kokoro token timestamps for
+  English, estimated from segment duration elsewhere); second highlight `lyra-word`
+- [ ] #9 Focus mode: ruler / spotlight following the highlight, toggled from the status bar
+- [ ] #11 Alt+click a word to hear it again, slower
+- [ ] #10 Reader view overlay with dyslexia-friendly fonts and spacing
+
 ## Backlog
 
 ## Done
+
+- [x] Reading speed (#4). `POST /tts/generate` takes `speed` (0.5–2.0, 422 outside), passed to Kokoro's
+  `generate`. Popup slider saves on input; options has it in a new Reading card. The background reads the
+  saved speed per chunk request, so a change applies from the next chunk; 1× is left out of the request.
+  New `src/settings.ts` holds the defaults shared by background, popup and options. Verified: real Kokoro
+  durations 6.45 s / 4.58 s / 2.98 s at 0.7× / 1× / 1.5×; 3 new pytest, 2 new Playwright tests (mock server
+  now logs full request bodies at `/__tts-requests`).
 
 - [x] Highlight chunks that don't match the page verbatim (#12). `highlightChunk` tries the exact whitespace-collapsed
   match first, then a word-level fuzzy match: words are letter/digit runs, lowercased (each Han/kana character is its
