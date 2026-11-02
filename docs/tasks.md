@@ -9,12 +9,18 @@
 
 Accessibility issues (#3–#11), in dependency order:
 
-- [ ] #11 Alt+click a word to hear it again, slower
 - [ ] #10 Reader view overlay with dyslexia-friendly fonts and spacing
 
 ## Backlog
 
 ## Done
+
+- [x] Click a word to hear it again (#11). Alt+Shift+click (same `clickToRead` setting as Alt+click) finds
+  the word under the pointer (`caretPositionFromPoint`/`caretRangeFromPoint`, letters/digits with inner
+  apostrophes/hyphens) and sends `read-word`; the background reads it at 0.75× the saved speed (never below
+  0.5) through the normal read path with a per-read `speed` override and `single` (no page highlighting,
+  since the word would match its first occurrence). Verified: 1 new Playwright test. Not done: the optional
+  definition tooltip (needs a dictionary source) — a follow-up if wanted.
 
 - [x] Focus mode (#9). A fixed, click-through overlay (`#__lyra-focus`) whose huge box-shadow dims the rest of
   the page. Ruler: a full-width band on the line of the spoken word (else the sentence's first line).

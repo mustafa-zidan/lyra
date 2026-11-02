@@ -100,3 +100,42 @@ test.describe('Read from here', () => {
     expect(here.language).toBe('en');
   });
 });
+
+test.describe('Click a word to hear it again', () => {
+  /** Requests for the fixture's single words (other test files share the mock). */
+  async function wordRequests(mockServerUrl) {
+    const all = await (await fetch(`${mockServerUrl}/__tts-requests`)).json();
+    return all.filter((body) => body?.text === 'sanctuaries');
+  }
+
+  test('Alt+Shift+click speaks only that word, slower', async ({
+    context,
+    extensionId,
+    mockServerUrl,
+  }) => {
+    const before = (await wordRequests(mockServerUrl)).length;
+    const page = await openPage(context, extensionId, mockServerUrl);
+    // Click in the middle of the word "sanctuaries" in #second.
+    const box = await page.evaluate(() => {
+      const node = document.getElementById('second').firstChild;
+      const at = node.textContent.indexOf('sanctuaries') + 5;
+      const range = document.createRange();
+      range.setStart(node, at);
+      range.setEnd(node, at + 1);
+      const r = range.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    });
+    await page.keyboard.down('Alt');
+    await page.keyboard.down('Shift');
+    await page.mouse.click(box.x, box.y);
+    await page.keyboard.up('Shift');
+    await page.keyboard.up('Alt');
+    await expect(page.locator('#__lyra-label')).toHaveText('Done.', { timeout: 15_000 });
+
+    const requests = (await wordRequests(mockServerUrl)).slice(before);
+    expect(requests).toHaveLength(1);
+    expect(requests[0].speed).toBe(0.75);
+    // Only the word was read: nothing else from the page was requested for this click.
+    expect(await page.evaluate(() => CSS.highlights.get('lyra-reading') ?? null)).toBeNull();
+  });
+});

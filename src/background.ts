@@ -29,6 +29,8 @@ const api: typeof chrome | null =
 
 const DEFAULT_SERVER_URL = DEFAULT_SETTINGS.serverUrl;
 const CONTEXT_MENU_ID = 'lyra-read-selection';
+/** A clicked word is spoken at this fraction of the reading speed. */
+const WORD_SPEED_FACTOR = 0.75;
 const READ_FROM_HERE_MENU_ID = 'lyra-read-from-here';
 /** The first chunk is kept short so reading starts quickly. */
 const FIRST_CHUNK_MAX = 180;
@@ -75,6 +77,7 @@ interface ExtMessage {
     | 'speak'
     | 'read-page'
     | 'read-from-here'
+    | 'read-word'
     | 'stop'
     | 'command'
     | 'generate'
@@ -91,6 +94,8 @@ interface ExtMessage {
   language?: string;
   /** For `read-from-here`: the clicked block's text, to find it in the article. */
   anchor?: string;
+  /** For `read-word` and `generate`: speaking rate overriding the saved speed. */
+  speed?: number;
   /** For `generate`: the read the chunk belongs to. */
   readId?: string;
 }
@@ -204,6 +209,20 @@ async function handleMessage(
       anchor: message.anchor ?? '',
       text: message.text,
       language: message.language,
+    });
+    return { ok: true };
+  }
+
+  if (action === 'read-word') {
+    const tabId = sender.tab?.id;
+    const word = message.text?.trim();
+    if (tabId === undefined || !word) return { ok: false, error: 'No word' };
+    const { serverUrl, defaultVoice, selectedModel, speed } = await getSettings();
+    // Slower than the reading speed, so an unfamiliar word is easier to catch.
+    const slow = Math.max(MIN_SPEED, +(speed * WORD_SPEED_FACTOR).toFixed(2));
+    await speakInTab(tabId, word, defaultVoice, serverUrl, selectedModel, message.language, {
+      speed: slow,
+      single: true,
     });
     return { ok: true };
   }
@@ -388,6 +407,8 @@ async function speakInTab(
   serverUrl: string,
   model: string,
   language?: string,
+  /** `speed` overrides the saved one; `single` is a lone word: no page highlighting. */
+  options: { speed?: number; single?: boolean } = {},
 ): Promise<void> {
   // Only one read at a time: stop any other tab's read and drop stale fetches.
   for (const otherTabId of activeReads.keys()) {
@@ -412,6 +433,8 @@ async function speakInTab(
     serverUrl,
     model,
     language,
+    speed: options.speed,
+    single: options.single,
   });
 }
 
@@ -427,6 +450,7 @@ async function generateChunk(tabId: number, message: ExtMessage): Promise<Record
     model = '',
     language,
     readId,
+    speed: speedOverride,
   } = message;
   if (!text) return { ok: false, error: 'No text provided' };
   const current = activeReads.get(tabId);
@@ -436,7 +460,7 @@ async function generateChunk(tabId: number, message: ExtMessage): Promise<Record
   if (current === undefined && readId) activeReads.set(tabId, readId); // worker restarted
 
   // Read per chunk, so a speed change in the popup applies from the next chunk on.
-  const { speed } = await getSettings();
+  const speed = speedOverride ?? (await getSettings()).speed;
   const controller = new AbortController();
   let fetches = activeFetches.get(tabId);
   if (!fetches) activeFetches.set(tabId, (fetches = new Set()));

@@ -905,6 +905,10 @@
     serverUrl: string;
     model: string;
     language?: string;
+    /** Speaking rate for this read, overriding the saved speed (a clicked word). */
+    speed?: number;
+    /** A lone word: don't look for it on the page to highlight. */
+    single?: boolean;
   }
 
   /** The background's answer to a `generate` request. */
@@ -1036,7 +1040,7 @@
           statusLabel = chunk!.label;
           showStatusBar(statusLabel);
         }
-        const span = highlightChunk(chunks[i]);
+        const span = req.single ? null : highlightChunk(chunks[i]);
         const cues =
           span && display.wordHighlight ? buildWordCues(chunks[i], span, chunk!.words ?? []) : [];
         await playBuffer(r, chunk!.buffer, cues);
@@ -1122,6 +1126,7 @@
         serverUrl: req.serverUrl,
         model: req.model,
         language: req.language,
+        speed: req.speed,
       })) as GenerateResponse | undefined;
     } catch (err) {
       return { buffer: null, error: (err as Error).message };
@@ -1385,6 +1390,58 @@
       e.stopPropagation();
       window.getSelection()?.removeAllRanges();
       api.runtime.sendMessage({ action: 'read-from-here', ...here }).catch(() => {});
+    },
+    true,
+  );
+
+  // ---------------------------------------------------------------------------
+  // Click a word to hear it again (Alt+Shift+click)
+  // ---------------------------------------------------------------------------
+
+  /** The word under a viewport point, or null. */
+  function wordAt(x: number, y: number): { word: string; node: Node } | null {
+    const doc = document as Document & {
+      caretPositionFromPoint?: (
+        x: number,
+        y: number,
+      ) => { offsetNode: Node; offset: number } | null;
+      caretRangeFromPoint?: (x: number, y: number) => Range | null;
+    };
+    let node: Node | null = null;
+    let offset = 0;
+    if (doc.caretPositionFromPoint) {
+      const pos = doc.caretPositionFromPoint(x, y);
+      if (pos) ({ offsetNode: node, offset } = pos);
+    } else if (doc.caretRangeFromPoint) {
+      const range = doc.caretRangeFromPoint(x, y);
+      if (range) ({ startContainer: node, startOffset: offset } = range);
+    }
+    if (!node || node.nodeType !== Node.TEXT_NODE) return null;
+    const text = node.textContent ?? '';
+    // The word whose span contains the caret (or ends at it: clicking a word's right half).
+    for (const m of text.matchAll(/[\p{L}\p{N}\p{M}]+(?:['’-][\p{L}\p{N}\p{M}]+)*/gu)) {
+      if (offset >= m.index && offset <= m.index + m[0].length) return { word: m[0], node };
+    }
+    return null;
+  }
+
+  // Alt+Shift+click on a word speaks just that word, slower. Alt+click alone reads from here.
+  document.addEventListener(
+    'click',
+    (e) => {
+      if (!display.clickToRead || !e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
+      const target = e.target instanceof Element ? e.target : null;
+      if (!target || target.closest('a, button, input, select, textarea, label, [contenteditable]'))
+        return;
+      const hit = wordAt(e.clientX, e.clientY);
+      if (!hit) return;
+      e.preventDefault();
+      e.stopPropagation();
+      window.getSelection()?.removeAllRanges();
+      const lang = target.closest('[lang]')?.getAttribute('lang') || document.documentElement.lang;
+      api.runtime
+        .sendMessage({ action: 'read-word', text: hit.word, language: lang?.trim() || undefined })
+        .catch(() => {});
     },
     true,
   );
