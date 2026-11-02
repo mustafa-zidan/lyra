@@ -38,6 +38,7 @@ export default defineConfig({
         '**/playback.test.js',
         '**/shortcuts.test.js',
         '**/from-here.test.js',
+        '**/reader.test.js',
       ],
       use: {
         // Actual context launch is handled by the extension-context fixture

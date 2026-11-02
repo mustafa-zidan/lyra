@@ -7,13 +7,24 @@
 
 ## To Do
 
-Accessibility issues (#3–#11), in dependency order:
-
-- [ ] #10 Reader view overlay with dyslexia-friendly fonts and spacing
 
 ## Backlog
 
 ## Done
+
+- [x] Reader view (#10). `reader-view` (popup button / command, no default key) → the background asks the
+  content script to toggle, extracts the article with Readability (now also returning HTML, title, byline)
+  and sends `open-reader`. The content script rebuilds the HTML into a fixed `#lyra-reader-view` overlay
+  through a whitelist (no attributes except resolved http(s)/mailto links and image `src`/`alt`; scripts,
+  iframes, forms dropped) from an inert `DOMParser` document. Text settings panel (font, size, line /
+  letter / word spacing, line length, theme) saves to `chrome.storage` and applies as CSS variables on every
+  open tab. Fonts: Atkinson Hyperlegible and OpenDyslexic woff2 (OFL-1.1, from @fontsource, `pnpm
+  vendor:fonts`, licences alongside) declared via `web_accessible_resources`. Reading uses the overlay as
+  the text index root, so highlighting, word highlight, focus mode and Alt+click work inside it; closing
+  the view stops the read. A dark theme makes the sentence highlight use dark text. Verified: 6 new
+  Playwright tests (open/close/toggle, settings saved, fonts load, sanitising, highlighting in the view),
+  screenshot. Not done: remembering that the view was open across navigations; the popup/options don't
+  expose the text settings (they live in the view).
 
 - [x] Click a word to hear it again (#11). Alt+Shift+click (same `clickToRead` setting as Alt+click) finds
   the word under the pointer (`caretPositionFromPoint`/`caretRangeFromPoint`, letters/digits with inner

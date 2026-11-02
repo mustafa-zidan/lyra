@@ -8,6 +8,8 @@
 
 export type HighlightStyle = 'background' | 'underline' | 'both';
 export type FocusMode = 'off' | 'ruler' | 'spotlight';
+export type ReaderFont = 'system' | 'atkinson' | 'opendyslexic';
+export type ReaderTheme = 'cream' | 'white' | 'blue' | 'dark';
 
 export interface Settings {
   serverUrl: string;
@@ -28,6 +30,17 @@ export interface Settings {
   wordColor: string;
   /** Reading aid: a ruler band on the current line, or dim all but the paragraph. */
   focusMode: FocusMode;
+  /** Reader view text settings (changed in the view itself). */
+  readerFont: ReaderFont;
+  /** Font size in px. */
+  readerSize: number;
+  readerLineHeight: number;
+  /** Letter and word spacing in em. */
+  readerLetterSpacing: number;
+  readerWordSpacing: number;
+  /** Line length in characters. */
+  readerWidth: number;
+  readerTheme: ReaderTheme;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -42,6 +55,13 @@ export const DEFAULT_SETTINGS: Settings = {
   wordHighlight: true,
   wordColor: '#ffd84d',
   focusMode: 'off',
+  readerFont: 'atkinson',
+  readerSize: 20,
+  readerLineHeight: 1.8,
+  readerLetterSpacing: 0.03,
+  readerWordSpacing: 0.12,
+  readerWidth: 60,
+  readerTheme: 'cream',
 };
 
 /** Slowest and fastest speed the popup and options offer (the server accepts 0.5–2). */

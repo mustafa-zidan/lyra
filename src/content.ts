@@ -93,6 +93,13 @@
     wordColor: string;
     /** Reading aid: a ruler band on the current line, or dim all but the paragraph. */
     focusMode: FocusMode;
+    readerFont: 'system' | 'atkinson' | 'opendyslexic';
+    readerSize: number;
+    readerLineHeight: number;
+    readerLetterSpacing: number;
+    readerWordSpacing: number;
+    readerWidth: number;
+    readerTheme: 'cream' | 'white' | 'blue' | 'dark';
   }
 
   type FocusMode = 'off' | 'ruler' | 'spotlight';
@@ -105,6 +112,13 @@
     wordHighlight: true,
     wordColor: '#ffd84d',
     focusMode: 'off',
+    readerFont: 'atkinson',
+    readerSize: 20,
+    readerLineHeight: 1.8,
+    readerLetterSpacing: 0.03,
+    readerWordSpacing: 0.12,
+    readerWidth: 60,
+    readerTheme: 'cream',
   };
 
   /** Only #rrggbb from storage goes into the stylesheet. */
@@ -115,6 +129,12 @@
   function highlightCss(): string {
     const color = safeColor(display.highlightColor, '#dcd7fc');
     if (display.highContrast) return 'background-color: #1b1b2a; color: #ffffff;';
+    // The dark reader theme has light text, which a pale highlight would swallow.
+    if (display.readerTheme === 'dark') {
+      return display.highlightStyle === 'underline'
+        ? `text-decoration: underline 3px ${color}; text-underline-offset: 3px;`
+        : `background-color: ${color}; color: #111111;`;
+    }
     const underline = `text-decoration: underline 3px color-mix(in srgb, ${color} 55%, #000); text-underline-offset: 3px;`;
     if (display.highlightStyle === 'underline') return underline;
     if (display.highlightStyle === 'both') return `background-color: ${color}; ${underline}`;
@@ -143,7 +163,7 @@
    * Walk all text nodes inside `root` and build an index.
    * Sets module-level `textIndex` and `fullText`.
    */
-  function buildTextIndex(root: Element = document.body): void {
+  function buildTextIndex(root: Element = readerArticle ?? document.body): void {
     textIndex = [];
     fullText = '';
 
@@ -881,6 +901,7 @@
     injectHighlightStyle();
     updateControls();
     updateFocus();
+    applyReaderStyle();
   }
   api.storage.local
     .get(Object.keys(display))
@@ -1330,7 +1351,10 @@
   });
   document.addEventListener('scroll', hideSelectionButton, true);
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') hideSelectionButton();
+    if (e.key === 'Escape') {
+      hideSelectionButton();
+      if (readerView) closeReader();
+    }
   });
 
   // ---------------------------------------------------------------------------
@@ -1447,6 +1471,318 @@
   );
 
   // ---------------------------------------------------------------------------
+  // Reader view (#10): the article in a clean overlay with text settings
+  // ---------------------------------------------------------------------------
+
+  /** What the background sends to open the view. */
+  interface ReaderContent {
+    text: string;
+    html?: string;
+    title?: string;
+    byline?: string;
+    language?: string;
+  }
+
+  let readerView: HTMLDivElement | null = null;
+  let readerArticle: HTMLElement | null = null;
+  let readerLanguage: string | undefined;
+  let readerPanel: HTMLElement | null = null;
+  let readerScrollLock: string | null = null;
+
+  const READER_THEMES = {
+    cream: { bg: '#f8f1e0', fg: '#2b2a26', bar: '#efe6cf' },
+    white: { bg: '#ffffff', fg: '#1b1b2a', bar: '#f1f1f6' },
+    blue: { bg: '#e3eefb', fg: '#1d2a3a', bar: '#d3e3f6' },
+    dark: { bg: '#1c1c24', fg: '#e8e8ee', bar: '#2a2a35' },
+  };
+  const READER_FONTS = {
+    system: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+    atkinson: '"Lyra Atkinson Hyperlegible", system-ui, sans-serif',
+    opendyslexic: '"Lyra OpenDyslexic", system-ui, sans-serif',
+  };
+
+  /** Elements kept when the article is rebuilt (everything else is unwrapped or dropped). */
+  const READER_KEEP = new Set(
+    'p h1 h2 h3 h4 h5 h6 ul ol li blockquote pre code em strong i b u sub sup br hr figure figcaption table thead tbody tr td th a img dl dt dd'.split(
+      ' ',
+    ),
+  );
+  const READER_DROP = new Set(
+    'script style noscript iframe object embed svg canvas form button input select textarea video audio link meta head'.split(
+      ' ',
+    ),
+  );
+
+  /** A copy of the article's HTML with only whitelisted elements and no attributes but links/images. */
+  function sanitizeInto(source: Node, target: Node): void {
+    for (const child of Array.from(source.childNodes)) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        target.appendChild(document.createTextNode(child.textContent ?? ''));
+        continue;
+      }
+      if (!(child instanceof Element)) continue;
+      const tag = child.tagName.toLowerCase();
+      if (READER_DROP.has(tag)) continue;
+      if (!READER_KEEP.has(tag)) {
+        sanitizeInto(child, target); // div, span, section…: keep the text, lose the wrapper
+        continue;
+      }
+      const el = document.createElement(tag);
+      const safeUrl = (value: string | null): string | null => {
+        if (!value) return null;
+        try {
+          const url = new URL(value, document.baseURI);
+          return /^(https?:|mailto:)$/.test(url.protocol) ? url.href : null;
+        } catch {
+          return null;
+        }
+      };
+      if (tag === 'a') {
+        const href = safeUrl(child.getAttribute('href'));
+        if (href) {
+          el.setAttribute('href', href);
+          el.setAttribute('rel', 'noopener noreferrer');
+        }
+      } else if (tag === 'img') {
+        const src = safeUrl(child.getAttribute('src'));
+        if (!src || src.startsWith('mailto:')) continue;
+        el.setAttribute('src', src);
+        el.setAttribute('alt', child.getAttribute('alt') ?? '');
+      }
+      sanitizeInto(child, el);
+      target.appendChild(el);
+    }
+  }
+
+  const READER_CSS = () => `
+    @font-face { font-family: "Lyra Atkinson Hyperlegible"; font-weight: 400; font-style: normal;
+      src: url(${api.runtime.getURL('fonts/atkinson-hyperlegible-latin-400-normal.woff2')}) format("woff2"); }
+    @font-face { font-family: "Lyra Atkinson Hyperlegible"; font-weight: 400; font-style: italic;
+      src: url(${api.runtime.getURL('fonts/atkinson-hyperlegible-latin-400-italic.woff2')}) format("woff2"); }
+    @font-face { font-family: "Lyra Atkinson Hyperlegible"; font-weight: 700; font-style: normal;
+      src: url(${api.runtime.getURL('fonts/atkinson-hyperlegible-latin-700-normal.woff2')}) format("woff2"); }
+    @font-face { font-family: "Lyra Atkinson Hyperlegible"; font-weight: 700; font-style: italic;
+      src: url(${api.runtime.getURL('fonts/atkinson-hyperlegible-latin-700-italic.woff2')}) format("woff2"); }
+    @font-face { font-family: "Lyra OpenDyslexic"; font-weight: 400;
+      src: url(${api.runtime.getURL('fonts/opendyslexic-latin-400-normal.woff2')}) format("woff2"); }
+    @font-face { font-family: "Lyra OpenDyslexic"; font-weight: 700;
+      src: url(${api.runtime.getURL('fonts/opendyslexic-latin-700-normal.woff2')}) format("woff2"); }
+    #lyra-reader-view { position: fixed; inset: 0; overflow: auto; z-index: 2147483645;
+      background: var(--lr-bg); color: var(--lr-fg); font-family: var(--lr-font);
+      font-size: var(--lr-size); line-height: var(--lr-lh); letter-spacing: var(--lr-ls);
+      word-spacing: var(--lr-ws); text-align: left; }
+    #lyra-reader-view *, #lyra-reader-view *::before, #lyra-reader-view *::after {
+      box-sizing: border-box; font-family: inherit; letter-spacing: inherit; word-spacing: inherit; }
+    #lyra-reader-view #lyra-reader-bar { position: sticky; top: 0; z-index: 1; display: flex; gap: 8px;
+      align-items: center; padding: 10px 16px; background: var(--lr-bar);
+      font: 600 14px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: 0; word-spacing: 0; }
+    #lyra-reader-view #lyra-reader-bar button { font: inherit; color: inherit; cursor: pointer;
+      padding: 7px 13px; border-radius: 8px; border: 1px solid currentColor; background: transparent; opacity: .9; }
+    #lyra-reader-view #lyra-reader-bar button:hover { opacity: 1; background: rgba(127,127,127,.18); }
+    #lyra-reader-view #lyra-reader-bar .spacer { flex: 1; }
+    #lyra-reader-view #lyra-reader-panel { position: sticky; top: 52px; z-index: 1; display: none;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px 18px; padding: 14px 16px;
+      background: var(--lr-bar); border-top: 1px solid rgba(127,127,127,.35);
+      font: 500 13px/1.3 system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: 0; word-spacing: 0; }
+    #lyra-reader-view #lyra-reader-panel.open { display: grid; }
+    #lyra-reader-view #lyra-reader-panel label { display: flex; flex-direction: column; gap: 5px; }
+    #lyra-reader-view #lyra-reader-panel select, #lyra-reader-view #lyra-reader-panel input { font: inherit; color: inherit; }
+    #lyra-reader-view #lyra-reader-panel select { padding: 5px; background: var(--lr-bg); border-radius: 6px; border: 1px solid currentColor; }
+    #lyra-reader-view article { max-width: calc(var(--lr-width) * 1ch); margin: 0 auto; padding: 40px 24px 140px; }
+    #lyra-reader-view article h1 { font-size: 1.7em; line-height: 1.25; margin: 0 0 .3em; }
+    #lyra-reader-view article h2 { font-size: 1.4em; line-height: 1.3; margin: 1.4em 0 .5em; }
+    #lyra-reader-view article h3, #lyra-reader-view article h4 { font-size: 1.15em; margin: 1.2em 0 .4em; }
+    #lyra-reader-view article .byline { opacity: .7; margin: 0 0 2em; font-size: .9em; }
+    #lyra-reader-view article p, #lyra-reader-view article ul, #lyra-reader-view article ol,
+    #lyra-reader-view article blockquote, #lyra-reader-view article pre, #lyra-reader-view article figure { margin: 0 0 1.1em; }
+    #lyra-reader-view article ul, #lyra-reader-view article ol { padding-left: 1.5em; }
+    #lyra-reader-view article blockquote { padding-left: 1em; border-left: 3px solid rgba(127,127,127,.5); }
+    #lyra-reader-view article a { color: inherit; text-decoration: underline; }
+    #lyra-reader-view article img { max-width: 100%; height: auto; }
+    #lyra-reader-view article pre { overflow: auto; padding: 12px; background: rgba(127,127,127,.15); border-radius: 6px; white-space: pre-wrap; }
+    #lyra-reader-view article table { border-collapse: collapse; }
+    #lyra-reader-view article td, #lyra-reader-view article th { border: 1px solid rgba(127,127,127,.4); padding: 4px 8px; }
+  `;
+
+  /** Push the user's text settings into the open view as CSS variables. */
+  function applyReaderStyle(): void {
+    if (!readerView) return;
+    const theme = READER_THEMES[display.readerTheme] ?? READER_THEMES.cream;
+    const num = (v: number, lo: number, hi: number, fallback: number) =>
+      Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback;
+    const set = (name: string, value: string) => readerView!.style.setProperty(name, value);
+    set('--lr-bg', theme.bg);
+    set('--lr-fg', theme.fg);
+    set('--lr-bar', theme.bar);
+    set('--lr-font', READER_FONTS[display.readerFont] ?? READER_FONTS.system);
+    set('--lr-size', `${num(display.readerSize, 14, 40, 20)}px`);
+    set('--lr-lh', String(num(display.readerLineHeight, 1.2, 2.6, 1.8)));
+    set('--lr-ls', `${num(display.readerLetterSpacing, 0, 0.3, 0.03)}em`);
+    set('--lr-ws', `${num(display.readerWordSpacing, 0, 0.8, 0.12)}em`);
+    set('--lr-width', String(num(display.readerWidth, 30, 100, 60)));
+  }
+
+  /** The settings panel: one control per text setting, saved as it changes. */
+  function buildReaderPanel(): HTMLElement {
+    const panel = document.createElement('div');
+    panel.id = 'lyra-reader-panel';
+    const save = (values: Record<string, unknown>) => api.storage.local.set(values).catch(() => {});
+
+    const select = (label: string, key: keyof DisplaySettings, options: [string, string][]) => {
+      const wrap = document.createElement('label');
+      wrap.append(label);
+      const el = document.createElement('select');
+      for (const [value, text] of options) {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = text;
+        el.append(opt);
+      }
+      el.value = String(display[key]);
+      el.addEventListener('change', () => save({ [key]: el.value }));
+      wrap.append(el);
+      panel.append(wrap);
+    };
+    const range = (
+      label: string,
+      key: keyof DisplaySettings,
+      min: number,
+      max: number,
+      step: number,
+    ) => {
+      const wrap = document.createElement('label');
+      wrap.append(label);
+      const el = document.createElement('input');
+      Object.assign(el, { type: 'range', min: String(min), max: String(max), step: String(step) });
+      el.value = String(display[key]);
+      el.addEventListener('input', () => save({ [key]: Number(el.value) }));
+      wrap.append(el);
+      panel.append(wrap);
+    };
+
+    select('Font', 'readerFont', [
+      ['atkinson', 'Atkinson Hyperlegible'],
+      ['opendyslexic', 'OpenDyslexic'],
+      ['system', 'System font'],
+    ]);
+    select('Background', 'readerTheme', [
+      ['cream', 'Cream'],
+      ['white', 'White'],
+      ['blue', 'Light blue'],
+      ['dark', 'Dark'],
+    ]);
+    range('Text size', 'readerSize', 14, 40, 1);
+    range('Line spacing', 'readerLineHeight', 1.2, 2.6, 0.1);
+    range('Letter spacing', 'readerLetterSpacing', 0, 0.3, 0.01);
+    range('Word spacing', 'readerWordSpacing', 0, 0.8, 0.02);
+    range('Line length', 'readerWidth', 30, 100, 2);
+    return panel;
+  }
+
+  function openReader(content: ReaderContent): void {
+    closeReader();
+    stopReading();
+    clearHighlight();
+    hideStatusBar();
+    readerLanguage = content.language;
+
+    let css = document.getElementById('lyra-reader-style');
+    if (!css) {
+      css = document.createElement('style');
+      css.id = 'lyra-reader-style';
+      document.head.appendChild(css);
+    }
+    css.textContent = READER_CSS();
+
+    const view = document.createElement('div');
+    view.id = 'lyra-reader-view';
+    view.setAttribute('role', 'dialog');
+    view.setAttribute('aria-modal', 'true');
+    view.setAttribute('aria-label', 'Reader view');
+    if (content.language) view.lang = content.language;
+
+    const bar = document.createElement('div');
+    bar.id = 'lyra-reader-bar';
+    const button = (id: string, text: string, onClick: () => void) => {
+      const b = document.createElement('button');
+      b.id = id;
+      b.type = 'button';
+      b.textContent = text;
+      b.addEventListener('click', onClick);
+      return b;
+    };
+    const spacer = document.createElement('span');
+    spacer.className = 'spacer';
+    const textButton = button('lyra-reader-text', 'Text settings', () => {
+      const open = readerPanel!.classList.toggle('open');
+      textButton.setAttribute('aria-expanded', String(open));
+    });
+    textButton.setAttribute('aria-expanded', 'false');
+    bar.append(
+      button('lyra-reader-read', 'Read aloud', () => {
+        const text = readerArticle?.innerText.trim();
+        if (text) {
+          api.runtime
+            .sendMessage({ action: 'speak', text, language: readerLanguage })
+            .catch(() => {});
+        }
+      }),
+      textButton,
+      spacer,
+      button('lyra-reader-close', 'Close', closeReader),
+    );
+    readerPanel = buildReaderPanel();
+
+    const article = document.createElement('article');
+    article.id = 'lyra-reader-article';
+    if (content.title) {
+      const h1 = document.createElement('h1');
+      h1.textContent = content.title;
+      article.append(h1);
+    }
+    if (content.byline) {
+      const by = document.createElement('p');
+      by.className = 'byline';
+      by.textContent = content.byline;
+      article.append(by);
+    }
+    if (content.html) {
+      // Parsed in an inert document: nothing in it runs or loads while we copy it over.
+      const inert = new DOMParser().parseFromString(content.html, 'text/html');
+      sanitizeInto(inert.body, article);
+    } else {
+      for (const para of content.text.split(/\n\s*\n|\n/)) {
+        if (!para.trim()) continue;
+        const p = document.createElement('p');
+        p.textContent = para.trim();
+        article.append(p);
+      }
+    }
+
+    view.append(bar, readerPanel, article);
+    document.body.appendChild(view);
+    readerView = view;
+    readerArticle = article;
+    readerScrollLock = document.documentElement.style.overflow;
+    document.documentElement.style.overflow = 'hidden';
+    applyReaderStyle();
+    view.focus?.();
+  }
+
+  function closeReader(): void {
+    if (!readerView) return;
+    stopReading();
+    clearHighlight();
+    hideStatusBar();
+    readerView.remove();
+    readerView = null;
+    readerArticle = null;
+    readerPanel = null;
+    document.documentElement.style.overflow = readerScrollLock ?? '';
+    readerScrollLock = null;
+  }
+
+  // ---------------------------------------------------------------------------
   // Message listener
   // ---------------------------------------------------------------------------
 
@@ -1501,6 +1837,18 @@
 
       case 'get-state':
         return Promise.resolve({ reading: reader !== null, paused: reader?.paused ?? false });
+
+      // Toggle the reader view: close it if open, else tell the background to send the article.
+      case 'toggle-reader':
+        if (readerView) {
+          closeReader();
+          return Promise.resolve({ open: false });
+        }
+        return Promise.resolve({ open: true });
+
+      case 'open-reader':
+        openReader(message as ReaderContent);
+        break;
 
       case 'get-text-from-here':
         return Promise.resolve(textFromHere(contextTarget));

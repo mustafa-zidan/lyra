@@ -78,6 +78,7 @@ interface ExtMessage {
     | 'read-page'
     | 'read-from-here'
     | 'read-word'
+    | 'reader-view'
     | 'stop'
     | 'command'
     | 'generate'
@@ -213,6 +214,12 @@ async function handleMessage(
     return { ok: true };
   }
 
+  if (action === 'reader-view') {
+    const tabId = await getActiveTabId();
+    if (tabId) await toggleReaderView(tabId);
+    return { ok: true };
+  }
+
   if (action === 'read-word') {
     const tabId = sender.tab?.id;
     const word = message.text?.trim();
@@ -290,6 +297,9 @@ async function runCommand(command: string, tabId?: number): Promise<void> {
     case 'read-page':
       if (tabId !== undefined) await readPage(tabId);
       return;
+    case 'reader-view':
+      if (tabId !== undefined) await toggleReaderView(tabId);
+      return;
     case 'stop':
       await handleMessage({ action: 'stop' }, {});
       return;
@@ -355,7 +365,33 @@ function findLoosely(haystack: string, needle: string): number {
   return haystack.search(new RegExp(pattern));
 }
 
-async function extractPage(tabId: number): Promise<{ text?: string; language?: string } | null> {
+/** What extractPage returns; the HTML and title come from Readability only. */
+interface ExtractedPage {
+  text?: string;
+  language?: string;
+  html?: string;
+  title?: string;
+  byline?: string;
+}
+
+/**
+ * Open the reader view in a tab, or close it if it is open. The content script owns
+ * the view, so ask it first and only extract the article when it needs to open.
+ */
+async function toggleReaderView(tabId: number): Promise<void> {
+  const state = (await api!.tabs
+    .sendMessage(tabId, { action: 'toggle-reader' })
+    .catch(() => null)) as { open: boolean } | null;
+  if (!state?.open) return;
+  const page = await extractPage(tabId).catch(() => null);
+  if (!page?.text?.trim()) {
+    notifyTab(tabId, { action: 'playback-error', error: 'No readable text on this page' });
+    return;
+  }
+  notifyTab(tabId, { action: 'open-reader', ...page });
+}
+
+async function extractPage(tabId: number): Promise<ExtractedPage | null> {
   // Inject Readability.js into the page's content-script world
   await api!.scripting.executeScript({
     target: { tabId },
@@ -371,7 +407,13 @@ async function extractPage(tabId: number): Promise<{ text?: string; language?: s
         // @ts-expect-error Readability injected as global by prior executeScript
         const article = new Readability(clone).parse();
         if (article?.textContent?.trim()) {
-          return { text: article.textContent.trim(), language: article.lang || language };
+          return {
+            text: article.textContent.trim(),
+            language: article.lang || language,
+            html: article.content,
+            title: article.title,
+            byline: article.byline,
+          };
         }
       } catch {
         /* fall through to fallback */
@@ -388,7 +430,7 @@ async function extractPage(tabId: number): Promise<{ text?: string; language?: s
       return { text: document.body.innerText, language };
     },
   });
-  return (result?.result as { text?: string; language?: string } | undefined) ?? null;
+  return (result?.result as ExtractedPage | undefined) ?? null;
 }
 
 // ---------------------------------------------------------------------------
