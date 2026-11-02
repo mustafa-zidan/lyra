@@ -22,6 +22,25 @@ const WAV_STUB = Buffer.from([
   0x00,
 ]);
 
+/** A silent 16 kHz mono WAV of the given length. */
+function silentWav(seconds) {
+  const samples = Math.round(16000 * seconds);
+  const buf = Buffer.alloc(44 + samples * 2);
+  buf.write('RIFF', 0);
+  buf.writeUInt32LE(36 + samples * 2, 4);
+  buf.write('WAVEfmt ', 8);
+  buf.writeUInt32LE(16, 16);
+  buf.writeUInt16LE(1, 20); // PCM
+  buf.writeUInt16LE(1, 22); // mono
+  buf.writeUInt32LE(16000, 24);
+  buf.writeUInt32LE(32000, 28);
+  buf.writeUInt16LE(2, 32);
+  buf.writeUInt16LE(16, 34);
+  buf.write('data', 36);
+  buf.writeUInt32LE(samples * 2, 40);
+  return buf;
+}
+
 const MODEL_ID = 'mlx-community/Kokoro-82M-bf16';
 
 const VOICES_RESPONSE = JSON.stringify({
@@ -101,24 +120,27 @@ export default async function globalSetup() {
       let body = '';
       req.on('data', (d) => (body += d));
       req.on('end', () => {
+        let json = null;
         try {
-          const json = JSON.parse(body);
-          ttsLog.push(json.text);
-          ttsRequests.push(json);
+          json = JSON.parse(body);
         } catch {
-          ttsLog.push(null);
-          ttsRequests.push(null);
+          // logged as null
         }
+        ttsLog.push(json?.text ?? null);
+        ttsRequests.push(json);
+        // Text carrying a "[2s]" marker gets that much (silent) audio, for playback tests;
+        // anything else gets the tiny stub, so reads finish at once.
+        const seconds = Number(/\[(\d+(?:\.\d+)?)s\]/.exec(json?.text ?? '')?.[1] ?? 0);
+        res.writeHead(200, {
+          'Content-Type': 'audio/wav',
+          'X-Audio-Duration': String(seconds || 0.001),
+          'X-Cached': 'false',
+          'X-Voice': 'af_heart',
+          'X-Model': MODEL_ID,
+          'X-Language': 'English (US)',
+        });
+        res.end(seconds ? silentWav(seconds) : WAV_STUB);
       });
-      res.writeHead(200, {
-        'Content-Type': 'audio/wav',
-        'X-Audio-Duration': '0.001',
-        'X-Cached': 'false',
-        'X-Voice': 'af_heart',
-        'X-Model': MODEL_ID,
-        'X-Language': 'English (US)',
-      });
-      res.end(WAV_STUB);
       return;
     }
 

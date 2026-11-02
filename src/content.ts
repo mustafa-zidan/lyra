@@ -432,19 +432,65 @@
   // ---------------------------------------------------------------------------
 
   let statusBar: HTMLDivElement | null = null;
+  /** Back / pause / forward buttons, shown only while a read is running. */
+  let controls: HTMLDivElement | null = null;
+  let pauseBtn: HTMLButtonElement | null = null;
+
+  const ICONS = {
+    back: '<path d="M6 5h2v14H6zM20 5v14L9.5 12z"/>',
+    forward: '<path d="M16 5h2v14h-2zM4 5v14l10.5-7z"/>',
+    pause: '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>',
+    play: '<path d="M7 4v16l13-8z"/>',
+  };
+
+  /** A square icon button for the status bar. */
+  function iconButton(
+    icon: keyof typeof ICONS,
+    label: string,
+    onClick: () => void,
+  ): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = '__lyra-icon-btn';
+    setIcon(btn, icon, label);
+    Object.assign(btn.style, {
+      background: '#f7f7fb',
+      border: '1px solid #e7e7ef',
+      color: '#1b1b2a',
+      borderRadius: '7px',
+      width: '28px',
+      height: '28px',
+      padding: '0',
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      cursor: 'pointer',
+      flex: 'none',
+    });
+    btn.addEventListener('click', onClick);
+    return btn;
+  }
+
+  function setIcon(btn: HTMLButtonElement, icon: keyof typeof ICONS, label: string): void {
+    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${ICONS[icon]}</svg>`;
+    btn.setAttribute('aria-label', label);
+    btn.title = label;
+  }
 
   function getOrCreateStatusBar(): HTMLDivElement {
     if (statusBar) return statusBar;
 
     statusBar = document.createElement('div');
     statusBar.id = '__lyra-status';
+    statusBar.setAttribute('role', 'region');
+    statusBar.setAttribute('aria-label', 'Lyra read aloud');
     Object.assign(statusBar.style, {
       position: 'fixed',
       bottom: '20px',
       right: '20px',
       left: 'auto',
       zIndex: '2147483647',
-      maxWidth: '340px',
+      maxWidth: '440px',
       background: '#ffffff',
       color: '#1b1b2a',
       fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
@@ -474,15 +520,30 @@
 
     const label = document.createElement('span');
     label.id = '__lyra-label';
+    label.setAttribute('aria-live', 'polite');
     label.textContent = 'Preparing…';
     Object.assign(label.style, {
       flex: '1',
+      minWidth: '0',
       whiteSpace: 'nowrap',
       overflow: 'hidden',
       textOverflow: 'ellipsis',
     });
 
+    controls = document.createElement('div');
+    controls.id = '__lyra-controls';
+    Object.assign(controls.style, { display: 'none', gap: '5px', flex: 'none' });
+    pauseBtn = iconButton('pause', 'Pause', togglePause);
+    pauseBtn.id = '__lyra-pause';
+    const backBtn = iconButton('back', 'Back one passage', () => skip(-1));
+    backBtn.id = '__lyra-back';
+    const forwardBtn = iconButton('forward', 'Forward one passage', () => skip(1));
+    forwardBtn.id = '__lyra-forward';
+    controls.append(backBtn, pauseBtn, forwardBtn);
+
     const stopBtn = document.createElement('button');
+    stopBtn.id = '__lyra-stop';
+    stopBtn.type = 'button';
     stopBtn.textContent = 'Stop';
     Object.assign(stopBtn.style, {
       background: '#fff4f4',
@@ -500,18 +561,27 @@
       stopReading();
       hideStatusBar();
       clearHighlight();
-      chrome.runtime.sendMessage({ action: 'stop' });
+      api.runtime.sendMessage({ action: 'stop' });
     });
 
-    statusBar.append(icon, label, stopBtn);
+    statusBar.append(icon, label, controls, stopBtn);
     document.body.appendChild(statusBar);
     return statusBar;
+  }
+
+  /** Show the playback buttons while a read runs; keep the pause button's state current. */
+  function updateControls(): void {
+    if (!controls || !pauseBtn) return;
+    controls.style.display = reader ? 'flex' : 'none';
+    const paused = reader?.paused ?? false;
+    setIcon(pauseBtn, paused ? 'play' : 'pause', paused ? 'Resume' : 'Pause');
   }
 
   function showStatusBar(text: string): void {
     const bar = getOrCreateStatusBar();
     const label = document.getElementById('__lyra-label');
     if (label) label.textContent = text;
+    updateControls();
     bar.style.opacity = '1';
     bar.style.transform = 'translateY(0)';
   }
@@ -587,6 +657,15 @@
     source: AudioBufferSourceNode | null;
     /** Resolves the playback promise of the chunk playing now. */
     finishPlayback: (() => void) | null;
+    /** Index of the chunk being played (or waited for). */
+    index: number;
+    /** `ctx.currentTime` when the current chunk started playing, or null before it has. */
+    startedAt: number | null;
+    paused: boolean;
+    /** Chunk to continue from, set by back/forward; the read loop picks it up. */
+    jumpTo: number | null;
+    /** Wakes the read loop while it waits for a chunk's audio, so a jump is immediate. */
+    wake: (() => void) | null;
   }
 
   /**
@@ -620,6 +699,11 @@
       ctx: new AudioContext(),
       source: null,
       finishPlayback: null,
+      index: 0,
+      startedAt: null,
+      paused: false,
+      jumpTo: null,
+      wake: null,
     };
     reader = r;
     // Not awaited: resume() can stay pending until the page allows audio, and the
@@ -640,7 +724,10 @@
     let played = 0;
     let lastError = '';
     try {
-      for (let i = 0; i < chunks.length; i++) {
+      let i = 0;
+      while (i < chunks.length) {
+        r.index = i;
+        r.startedAt = null;
         for (let j = i; j <= i + LOOKAHEAD; j++) prepare(j);
 
         const slowTimer = setTimeout(() => {
@@ -648,40 +735,100 @@
           showStatusBar('Loading model… the first use downloads it, which can take a while');
           statusLabel = '';
         }, SLOW_REQUEST_MS);
-        const chunk = await pending.get(i)!;
+        const woken = new Promise<null>((resolve) => (r.wake = () => resolve(null)));
+        const chunk = await Promise.race([pending.get(i)!, woken]);
+        r.wake = null;
         clearTimeout(slowTimer);
+        if (r.cancelled || chunk?.cancelled) return;
+        if (r.jumpTo !== null) {
+          i = r.jumpTo;
+          r.jumpTo = null;
+          continue;
+        }
         pending.delete(i); // drop the decoded audio once played
-        if (r.cancelled || chunk.cancelled) return;
 
-        if (!chunk.buffer) {
-          lastError = chunk.error ?? 'No audio';
+        if (!chunk!.buffer) {
+          lastError = chunk!.error ?? 'No audio';
           if (++failures >= MAX_CONSECUTIVE_FAILURES) throw new Error(lastError);
+          i++;
           continue; // skip a passage the server couldn't read and carry on
         }
         failures = 0;
 
-        if (chunk.label && chunk.label !== statusLabel) {
-          statusLabel = chunk.label;
+        if (chunk!.label && chunk!.label !== statusLabel) {
+          statusLabel = chunk!.label;
           showStatusBar(statusLabel);
         }
         highlightChunk(chunks[i]);
-        await playBuffer(r, chunk.buffer);
+        await playBuffer(r, chunk!.buffer);
         played++;
         if (r.cancelled) return;
+        if (r.jumpTo !== null) {
+          i = r.jumpTo;
+          r.jumpTo = null;
+        } else {
+          i++;
+        }
       }
       if (played === 0 && lastError) throw new Error(lastError);
 
       clearHighlight();
+      endRead(r); // before the label, so the playback buttons hide
       showStatusBar('Done.');
       setTimeout(hideStatusBar, 1500);
     } catch (err) {
       if (r.cancelled) return;
       clearHighlight();
+      endRead(r);
       showStatusBar(`Error: ${(err as Error).message}`);
       setTimeout(hideStatusBar, 4000);
     } finally {
-      if (reader === r) stopReading();
+      endRead(r);
     }
+  }
+
+  /** Seconds into the current chunk after which "back" restarts it rather than going back. */
+  const RESTART_THRESHOLD_S = 2;
+
+  /**
+   * Move the read by `delta` chunks. Back restarts the current chunk if it has been
+   * playing a while (like a media player), so a hard sentence is easy to hear again.
+   * The read resumes if it was paused.
+   */
+  function skip(delta: -1 | 1): void {
+    const r = reader;
+    if (!r) return;
+    let target = r.index + delta;
+    if (
+      delta < 0 &&
+      r.startedAt !== null &&
+      r.ctx.currentTime - r.startedAt > RESTART_THRESHOLD_S
+    ) {
+      target = r.index;
+    }
+    target = Math.max(0, target);
+    r.jumpTo = target; // past the last chunk simply ends the read
+    if (r.paused) setPaused(false);
+    try {
+      r.source?.stop();
+    } catch {
+      // not started yet — ignore
+    }
+    r.finishPlayback?.();
+    r.wake?.();
+  }
+
+  function setPaused(paused: boolean): void {
+    const r = reader;
+    if (!r || r.paused === paused) return;
+    r.paused = paused;
+    if (paused) r.ctx.suspend().catch(() => {});
+    else r.ctx.resume().catch(() => {});
+    updateControls();
+  }
+
+  function togglePause(): void {
+    if (reader) setPaused(!reader.paused);
   }
 
   /** Ask the background for a chunk's audio and decode it. */
@@ -727,6 +874,7 @@
       r.finishPlayback = finish;
       source.onended = finish;
       source.start();
+      r.startedAt = r.ctx.currentTime;
     });
   }
 
@@ -739,9 +887,12 @@
 
   /** Stop the current read, if any, and release its audio. */
   function stopReading(): void {
-    const r = reader;
-    if (!r) return;
-    reader = null;
+    if (reader) endRead(reader);
+  }
+
+  /** Cancel a read and release its audio (safe to call more than once). */
+  function endRead(r: Reader): void {
+    if (reader === r) reader = null;
     r.cancelled = true;
     try {
       r.source?.stop();
@@ -749,6 +900,7 @@
       // source may not have started yet — ignore
     }
     r.finishPlayback?.();
+    r.wake?.();
     if (r.ctx.state !== 'closed') r.ctx.close().catch(() => {});
   }
 
@@ -932,6 +1084,25 @@
         showStatusBar(`Error: ${(message as { error: string }).error}`);
         setTimeout(hideStatusBar, 4000);
         break;
+
+      // Back / pause / forward from the popup or a keyboard shortcut. Sent to every tab;
+      // only the one reading acts on it.
+      case 'playback-control':
+        switch ((message as { command: string }).command) {
+          case 'toggle-pause':
+            togglePause();
+            break;
+          case 'back':
+            skip(-1);
+            break;
+          case 'forward':
+            skip(1);
+            break;
+        }
+        break;
+
+      case 'get-state':
+        return Promise.resolve({ reading: reader !== null, paused: reader?.paused ?? false });
 
       case 'get-selection':
         return Promise.resolve({

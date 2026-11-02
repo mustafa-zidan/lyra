@@ -17,6 +17,10 @@ const genderFilter = document.getElementById('gender-filter') as HTMLSelectEleme
 const btnSelection = document.getElementById('btn-read-selection') as HTMLButtonElement;
 const btnPage = document.getElementById('btn-read-page') as HTMLButtonElement;
 const btnStop = document.getElementById('btn-stop') as HTMLButtonElement;
+const playback = document.getElementById('playback') as HTMLElement;
+const btnPause = document.getElementById('btn-pause') as HTMLButtonElement;
+const btnBack = document.getElementById('btn-back') as HTMLButtonElement;
+const btnForward = document.getElementById('btn-forward') as HTMLButtonElement;
 const optionsLink = document.getElementById('options-link') as HTMLAnchorElement;
 const speedInput = document.getElementById('speed') as HTMLInputElement;
 const speedValue = document.getElementById('speed-value') as HTMLOutputElement;
@@ -94,6 +98,35 @@ async function init(): Promise<void> {
   btnSelection.addEventListener('click', () => readSelection(serverUrl, selectedModel));
   btnPage.addEventListener('click', () => readPage(serverUrl, selectedModel));
   btnStop.addEventListener('click', stopPlayback);
+  btnPause.addEventListener('click', () => control('toggle-pause'));
+  btnBack.addEventListener('click', () => control('back'));
+  btnForward.addEventListener('click', () => control('forward'));
+
+  await refreshPlayback();
+}
+
+/** Whether the active tab is reading (and paused), from its content script. */
+async function readState(): Promise<{ reading: boolean; paused: boolean }> {
+  const [tab] = await getTabs();
+  if (!tab?.id) return { reading: false, paused: false };
+  const state = (await api.tabs.sendMessage(tab.id, { action: 'get-state' }).catch(() => null)) as {
+    reading: boolean;
+    paused: boolean;
+  } | null;
+  return state ?? { reading: false, paused: false };
+}
+
+/** Show the playback controls if the active tab is reading. */
+async function refreshPlayback(): Promise<void> {
+  const { reading, paused } = await readState();
+  setPlaying(reading);
+  btnPause.textContent = paused ? 'Resume' : 'Pause';
+}
+
+async function control(command: 'toggle-pause' | 'back' | 'forward'): Promise<void> {
+  await sendBackground({ action: 'control', command });
+  // The content script handles the command asynchronously; read the new state after it.
+  setTimeout(refreshPlayback, 100);
 }
 
 // ---------------------------------------------------------------------------
@@ -114,6 +147,7 @@ async function readSelection(serverUrl: string, model: string): Promise<void> {
   }
 
   setPlaying(true);
+  btnPause.textContent = 'Pause';
   await sendBackground({
     action: 'speak',
     text,
@@ -167,6 +201,7 @@ async function readPage(serverUrl: string, model: string): Promise<void> {
   if (!text) return;
 
   setPlaying(true);
+  btnPause.textContent = 'Pause';
   await sendBackground({
     action: 'speak',
     text,
@@ -267,6 +302,7 @@ function setPlaying(playing: boolean): void {
   btnSelection.style.display = playing ? 'none' : '';
   btnPage.style.display = playing ? 'none' : '';
   btnStop.style.display = playing ? '' : 'none';
+  playback.style.display = playing ? '' : 'none';
 }
 
 // ---------------------------------------------------------------------------

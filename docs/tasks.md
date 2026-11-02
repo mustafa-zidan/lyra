@@ -9,7 +9,6 @@
 
 Accessibility issues (#3–#11), in dependency order:
 
-- [ ] #5 Pause/resume and back/forward a chunk in the status bar and popup
 - [ ] #6 Keyboard shortcuts (`commands`): read selection, read page, pause/resume, stop
 - [ ] #7 "Read from here" context-menu item and Alt+click a paragraph
 - [ ] #3 Word highlight: server returns word timings (`X-Word-Timings`, Kokoro token timestamps for
@@ -21,6 +20,16 @@ Accessibility issues (#3–#11), in dependency order:
 ## Backlog
 
 ## Done
+
+- [x] Pause/resume and back/forward (#5). The status bar gets back / pause / forward icon buttons while a
+  read runs; the popup shows the same controls when its tab is reading (asks the content script with
+  `get-state`). Pause suspends the page's AudioContext. The read loop is now a `while` over a chunk index:
+  back/forward set `jumpTo`, stop the current source and wake the loop if it is still waiting for audio,
+  so a skip is immediate. Back restarts the current chunk after 2 s of playback. Popup → background
+  `control` message → `playback-control` to the reading tab (all tabs if the worker lost track).
+  Verified: 5 new Playwright tests (mock server returns N s of silence for text with a `[Ns]` marker,
+  so playback can be paused and skipped), status bar screenshot; 51 Playwright tests pass.
+  Reflection: the skip unit is a chunk (up to 450 chars), not a sentence; sentence-level skip needs #3.
 
 - [x] Highlight colour and style (#8). Options page Highlight card: five preset swatches plus a custom
   colour picker, style (background / underline / both), high contrast (dark highlight, light text), with
