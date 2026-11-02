@@ -120,6 +120,84 @@ test.describe('Content script: reading highlight', () => {
     expect(await highlighted()).toBeNull();
   });
 
+  test('a chunk without the page footnote marker still highlights', async ({
+    context,
+    mockServerUrl,
+  }) => {
+    const { send, highlighted } = await openReader(context, mockServerUrl);
+    await send({ action: 'playback-started', text: '' });
+    await send({ action: 'chunk-highlight', text: 'Eurydice was bitten by a viper and died.' });
+
+    expect(await highlighted()).toEqual({
+      text: 'Eurydice was bitten by a viper[1] and died.',
+      id: 'footnote',
+    });
+  });
+
+  test('straight quotes and dashes match smart ones on the page', async ({
+    context,
+    mockServerUrl,
+  }) => {
+    const { send, highlighted } = await openReader(context, mockServerUrl);
+    await send({ action: 'playback-started', text: '' });
+    await send({
+      action: 'chunk-highlight',
+      text: '"Don\'t look back," Hades said - and Orpheus did.',
+    });
+
+    expect(await highlighted()).toEqual({
+      text: '“Don’t look back,” Hades said — and Orpheus did.',
+      id: 'quotes',
+    });
+  });
+
+  test('a chunk missing hidden page text still highlights', async ({ context, mockServerUrl }) => {
+    const { send, highlighted } = await openReader(context, mockServerUrl);
+    await send({ action: 'playback-started', text: '' });
+    await send({ action: 'chunk-highlight', text: 'The gates of the underworld opened.' });
+
+    expect((await highlighted())?.id).toBe('hidden');
+  });
+
+  test('chunks cut mid-word highlight the whole word on both sides', async ({
+    context,
+    mockServerUrl,
+  }) => {
+    const { send, highlighted } = await openReader(context, mockServerUrl);
+    await send({ action: 'playback-started', text: '' });
+    await send({ action: 'chunk-highlight', text: '"Don\'t look back," Hades sa' });
+    expect(await highlighted()).toEqual({ text: '“Don’t look back,” Hades said', id: 'quotes' });
+
+    await send({ action: 'chunk-highlight', text: 'id - and Orpheus did.' });
+    expect(await highlighted()).toEqual({ text: 'said — and Orpheus did.', id: 'quotes' });
+  });
+
+  test('fuzzy matching works on Japanese text without spaces', async ({
+    context,
+    mockServerUrl,
+  }) => {
+    const { send, highlighted } = await openReader(context, mockServerUrl);
+    await send({ action: 'playback-started', text: '' });
+    // Readability dropped a character; there are no spaces to split words on.
+    await send({ action: 'chunk-highlight', text: 'オルフェウスは竪琴を弾た。' });
+
+    expect(await highlighted()).toEqual({ text: 'オルフェウスは竪琴を弾いた。', id: 'cjk' });
+  });
+
+  test('a chunk sharing only a few words with the page is not highlighted', async ({
+    context,
+    mockServerUrl,
+  }) => {
+    const { send, highlighted } = await openReader(context, mockServerUrl);
+    await send({ action: 'playback-started', text: '' });
+    await send({
+      action: 'chunk-highlight',
+      text: 'Orpheus played a song that nobody in the hall had heard before.',
+    });
+
+    expect(await highlighted()).toBeNull();
+  });
+
   test('null text clears the highlight', async ({ context, mockServerUrl }) => {
     const { send, highlighted } = await openReader(context, mockServerUrl);
     await send({ action: 'playback-started', text: '' });
