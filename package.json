@@ -16,10 +16,13 @@
     "build:ext": "tsc && web-ext build --source-dir extension/ --artifacts-dir dist/ --overwrite-dest",
     "test:ext": "tsc && playwright test",
     "generate-icons": "node scripts/generate-icons.js",
-    "vendor:readability": "cp node_modules/@mozilla/readability/Readability.js extension/vendor/Readability.js"
+    "vendor:readability": "cp node_modules/@mozilla/readability/Readability.js extension/vendor/Readability.js",
+    "vendor:fonts": "cp node_modules/@fontsource/atkinson-hyperlegible/files/atkinson-hyperlegible-latin-{400,700}-{normal,italic}.woff2 node_modules/@fontsource/opendyslexic/files/opendyslexic-latin-{400,700}-normal.woff2 extension/fonts/"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@fontsource/atkinson-hyperlegible": "^5.3.0",
+    "@fontsource/opendyslexic": "^5.3.0",
     "@mozilla/readability": "^0.6.0",
     "@playwright/test": "^1.64.1",
     "@types/chrome": "^0.3.6",

@@ -164,6 +164,12 @@ pnpm run build:ts
 - **Follow along**: the sentence being read is highlighted, and the word being spoken on top of
   it. English uses Kokoro's word timestamps; other languages use an estimate from the audio
   length. Turn it off in the settings to highlight the whole passage instead.
+- **Reader view** (popup button, or the "Open or close the reader view" shortcut, which has no default
+  key): the article in a clean overlay with **Text settings**: font (Atkinson Hyperlegible, OpenDyslexic
+  or the system font; both bundled, SIL OFL 1.1, in `extension/fonts/`), size, line, letter and word
+  spacing, line length, and a cream / white / light blue / dark background. **Read aloud** reads and
+  highlights inside the view; Escape closes it. The article is rebuilt from Readability's HTML with only
+  basic elements, links and images kept.
 - **Focus mode**: dim everything but the line (ruler) or paragraph (spotlight) being read. Cycle it
   with the button on the reading bar, or set it in the settings.
 - **Highlight** (settings): the sentence colour (presets or a custom colour) and the word colour, background,

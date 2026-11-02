@@ -16,6 +16,7 @@ const languageFilter = document.getElementById('language-filter') as HTMLSelectE
 const genderFilter = document.getElementById('gender-filter') as HTMLSelectElement;
 const btnSelection = document.getElementById('btn-read-selection') as HTMLButtonElement;
 const btnPage = document.getElementById('btn-read-page') as HTMLButtonElement;
+const btnReader = document.getElementById('btn-reader') as HTMLButtonElement;
 const btnStop = document.getElementById('btn-stop') as HTMLButtonElement;
 const playback = document.getElementById('playback') as HTMLElement;
 const btnPause = document.getElementById('btn-pause') as HTMLButtonElement;
@@ -97,6 +98,10 @@ async function init(): Promise<void> {
   // Button handlers
   btnSelection.addEventListener('click', () => readSelection(serverUrl, selectedModel));
   btnPage.addEventListener('click', readPage);
+  btnReader.addEventListener('click', async () => {
+    await sendBackground({ action: 'reader-view' });
+    window.close(); // the view opens in the page; the popup would only sit in front of it
+  });
   btnStop.addEventListener('click', stopPlayback);
   btnPause.addEventListener('click', () => control('toggle-pause'));
   btnBack.addEventListener('click', () => control('back'));
